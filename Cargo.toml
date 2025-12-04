@@ -1,0 +1,28 @@
+[package]
+name = "gdelta"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Oliver Seifert <github.staging362@passmail.net>"]
+license = "MIT"
+description = "Fast delta compression algorithm for similar data chunks"
+repository = "https://github.com/ImGajeed76/gdelta"
+documentation = "https://docs.rs/gdelta"
+homepage = "https://github.com/ImGajeed76/gdelta"
+keywords = ["compression", "delta", "deduplication", "encoding", "gdelta"]
+categories = ["compression", "algorithms", "encoding"]
+readme = "README.md"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.8.0"
+
+[[bench]]
+name = "delta_benchmark"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
