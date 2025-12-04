@@ -11,20 +11,20 @@ A fast delta compression algorithm for similar data chunks, implemented in pure 
 `gdelta` is a Rust implementation of the GDelta algorithm by Haoliang Tan. It provides efficient delta encoding for similar data chunks (typically 4KB - 64KB) commonly found in deduplication systems.
 
 **Key Features:**
-- 🚀 Fast delta encoding and decoding (1 GB/s encode, 5-8 GB/s decode)
+- 🚀 Fast delta encoding and decoding with optional SIMD optimization
 - 🔒 Memory-safe implementation in pure Rust
 - 📦 Simple, ergonomic API
 - ✨ No unsafe code
 - 🧪 Thoroughly tested
 
 **Performance:**
-- **Encoding**: 850-1000 MiB/s (~1 GB/s)
-- **Decoding**: 5-8 GB/s (5-8x faster than encoding)
+- **Encoding**: 900-1,000 MiB/s (~1 GB/s) - **up to 19% faster with SIMD**
+- **Decoding**: 5-9 GB/s (5-8x faster than encoding)
 - Faster than Xdelta, Zdelta, Ddelta, and Edelta
 - Optimized for inter-chunk redundancy removal
 - Best used with general compression (e.g., ZSTD) for additional compression
 
-*Benchmarked on typical hardware with similar data chunks*
+*Benchmarked on 11th Gen Intel® Core™ i7-11370H with similar data chunks*
 
 ## Installation
 

@@ -1,6 +1,6 @@
 [package]
 name = "gdelta"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Oliver Seifert <github.staging362@passmail.net>"]
@@ -14,9 +14,14 @@ categories = ["compression", "algorithms", "encoding"]
 readme = "README.md"
 
 [dependencies]
+wide = { version = "1.0.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.8.0"
+
+[features]
+default = ["simd"]
+simd = ["wide"]
 
 [[bench]]
 name = "delta_benchmark"

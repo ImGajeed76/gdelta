@@ -92,7 +92,23 @@ fn find_common_prefix(a: &[u8], b: &[u8]) -> usize {
     let max_len = a.len().min(b.len());
     let mut len = 0;
 
-    // Compare in 8-byte chunks for speed
+    #[cfg(feature = "simd")]
+    {
+        use wide::u8x16;
+
+        // Process 16 bytes at a time with SIMD
+        while len + 16 <= max_len {
+            let a_chunk = u8x16::new(a[len..len + 16].try_into().unwrap());
+            let b_chunk = u8x16::new(b[len..len + 16].try_into().unwrap());
+
+            if a_chunk != b_chunk {
+                break;
+            }
+            len += 16;
+        }
+    }
+
+    // Compare in 8-byte chunks for remaining data
     while len + 8 <= max_len {
         let a_chunk = u64::from_le_bytes(a[len..len + 8].try_into().unwrap());
         let b_chunk = u64::from_le_bytes(b[len..len + 8].try_into().unwrap());
@@ -115,7 +131,25 @@ fn find_common_suffix(a: &[u8], b: &[u8], prefix_len: usize) -> usize {
     let max_len = (a.len() - prefix_len).min(b.len() - prefix_len);
     let mut len = 0;
 
-    // Compare in 8-byte chunks for speed (from the end)
+    #[cfg(feature = "simd")]
+    {
+        use wide::u8x16;
+
+        // Process 16 bytes at a time with SIMD (from the end)
+        while len + 16 <= max_len {
+            let a_start = a.len() - len - 16;
+            let b_start = b.len() - len - 16;
+            let a_chunk = u8x16::new(a[a_start..a_start + 16].try_into().unwrap());
+            let b_chunk = u8x16::new(b[b_start..b_start + 16].try_into().unwrap());
+
+            if a_chunk != b_chunk {
+                break;
+            }
+            len += 16;
+        }
+    }
+
+    // Compare in 8-byte chunks (from the end)
     while len + 8 <= max_len {
         let a_start = a.len() - len - 8;
         let b_start = b.len() - len - 8;
@@ -272,6 +306,30 @@ fn extend_match(
     base_end: usize,
 ) -> usize {
     let mut len = WORD_SIZE;
+
+    #[cfg(feature = "simd")]
+    {
+        use wide::u8x16;
+
+        // Extend in 16-byte chunks with SIMD
+        while new_pos + len + 16 <= new_end && base_pos + len + 16 <= base_end {
+            let new_chunk = u8x16::new(
+                new_data[new_pos + len..new_pos + len + 16]
+                    .try_into()
+                    .unwrap(),
+            );
+            let base_chunk = u8x16::new(
+                base_data[base_pos + len..base_pos + len + 16]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            if new_chunk != base_chunk {
+                break;
+            }
+            len += 16;
+        }
+    }
 
     // Extend in 8-byte chunks
     while new_pos + len + 8 <= new_end && base_pos + len + 8 <= base_end {
