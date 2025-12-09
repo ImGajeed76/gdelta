@@ -542,7 +542,7 @@ pub fn build_hash_table(base_data: &[u8], start: usize, end: usize, hash_bits: u
         return hash_table;
     }
 
-    let shift_bits = (64 / WORD_SIZE) + if 64 % WORD_SIZE != 0 { 1 } else { 0 };
+    let shift_bits = (64 / WORD_SIZE) + usize::from(64 % WORD_SIZE != 0);
     let index_shift = 64 - hash_bits;
 
     // Initialize fingerprint with first WORD_SIZE bytes
@@ -584,7 +584,7 @@ pub fn build_hash_table(base_data: &[u8], start: usize, end: usize, hash_bits: u
 /// Computes a GEAR rolling hash fingerprint for a data window.
 #[inline]
 pub fn compute_fingerprint(data: &[u8], start: usize) -> u64 {
-    let shift_bits = (64 / WORD_SIZE) + if 64 % WORD_SIZE != 0 { 1 } else { 0 };
+    let shift_bits = (64 / WORD_SIZE) + usize::from(64 % WORD_SIZE != 0);
     let mut fingerprint = 0u64;
 
     for i in 0..WORD_SIZE {
@@ -602,7 +602,7 @@ pub fn compute_fingerprint(data: &[u8], start: usize) -> u64 {
 /// Updates a rolling fingerprint by removing one byte and adding another.
 #[inline]
 pub fn roll_fingerprint(fingerprint: u64, new_byte: u8) -> u64 {
-    let shift_bits = (64 / WORD_SIZE) + if 64 % WORD_SIZE != 0 { 1 } else { 0 };
+    let shift_bits = (64 / WORD_SIZE) + usize::from(64 % WORD_SIZE != 0);
     // Use wrapping operations - overflow is intentional in hash computation
     fingerprint
         .wrapping_shl(shift_bits as u32)

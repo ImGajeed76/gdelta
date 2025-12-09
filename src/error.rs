@@ -1,8 +1,8 @@
-//! Error types for GDelta operations.
+//! Error types for `GDelta` operations.
 
 use std::fmt;
 
-/// Result type for GDelta operations.
+/// Result type for `GDelta` operations.
 pub type Result<T> = std::result::Result<T, GDeltaError>;
 
 /// Errors that can occur during delta encoding or decoding.
@@ -29,16 +29,15 @@ pub enum GDeltaError {
 impl fmt::Display for GDeltaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GDeltaError::InvalidDelta(msg) => write!(f, "Invalid delta: {}", msg),
+            GDeltaError::InvalidDelta(msg) => write!(f, "Invalid delta: {msg}"),
             GDeltaError::UnexpectedEndOfData => write!(f, "Unexpected end of data"),
             GDeltaError::SizeMismatch { expected, actual } => {
                 write!(
                     f,
-                    "Size mismatch: expected {} bytes, got {} bytes",
-                    expected, actual
+                    "Size mismatch: expected {expected} bytes, got {actual} bytes"
                 )
             }
-            GDeltaError::BufferError(msg) => write!(f, "Buffer error: {}", msg),
+            GDeltaError::BufferError(msg) => write!(f, "Buffer error: {msg}"),
         }
     }
 }

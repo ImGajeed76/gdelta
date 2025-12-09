@@ -40,6 +40,10 @@ simd = ["wide"]
 name = "comprehensive"
 harness = false
 
+[[bench]]
+name = "simple"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "fat"

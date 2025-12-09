@@ -10,16 +10,16 @@
 //! - Graceful Ctrl+C handling with partial results
 //!
 //! Run: cargo bench --bench comprehensive
-//! Quick mode: BENCH_MODE=quick cargo bench --bench comprehensive
-//! Full mode: BENCH_MODE=full cargo bench --bench comprehensive
-//! Custom: BENCH_ALGOS=gdelta,xpatch BENCH_FORMATS=json,csv cargo bench --bench comprehensive
-//! View report: cat target/benchmark_report.md
+//! Quick mode: `BENCH_MODE=quick` cargo bench --bench comprehensive
+//! Full mode: `BENCH_MODE=full` cargo bench --bench comprehensive
+//! Custom: `BENCH_ALGOS=gdelta,xpatch` `BENCH_FORMATS=json,csv` cargo bench --bench comprehensive
+//! View report: cat `target/benchmark_report.md`
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use fake::Fake;
-use fake::faker::internet::en::*;
-use fake::faker::lorem::en::*;
-use fake::faker::name::en::*;
+use fake::faker::internet::en::SafeEmail;
+use fake::faker::lorem::en::{Sentence, Paragraph};
+use fake::faker::name::en::Name;
 use gdelta::{decode, encode};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -41,15 +41,15 @@ fn get_timestamp() -> String {
 }
 
 fn get_wal_file(timestamp: &str) -> String {
-    format!("target/benchmark_results_{}/metrics.wal", timestamp)
+    format!("target/benchmark_results_{timestamp}/metrics.wal")
 }
 
 fn get_report_md(timestamp: &str) -> String {
-    format!("target/benchmark_report_{}.md", timestamp)
+    format!("target/benchmark_report_{timestamp}.md")
 }
 
 fn get_report_json(timestamp: &str) -> String {
-    format!("target/benchmark_report_{}.json", timestamp)
+    format!("target/benchmark_report_{timestamp}.json")
 }
 
 // Global flag for graceful shutdown
@@ -84,16 +84,16 @@ trait DeltaAlgorithm: Send + Sync {
 struct GdeltaAlgorithm;
 
 impl DeltaAlgorithm for GdeltaAlgorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "gdelta"
     }
 
     fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        encode(new, base).map_err(|e| e.into())
+        encode(new, base).map_err(std::convert::Into::into)
     }
 
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        decode(delta, base).map_err(|e| e.into())
+        decode(delta, base).map_err(std::convert::Into::into)
     }
 }
 
@@ -101,7 +101,7 @@ impl DeltaAlgorithm for GdeltaAlgorithm {
 struct GdeltaZstdAlgorithm;
 
 impl DeltaAlgorithm for GdeltaZstdAlgorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "gdelta_zstd"
     }
 
@@ -113,7 +113,7 @@ impl DeltaAlgorithm for GdeltaZstdAlgorithm {
 
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let decompressed = zstd::decode_all(delta)?;
-        decode(&decompressed, base).map_err(|e| e.into())
+        decode(&decompressed, base).map_err(std::convert::Into::into)
     }
 }
 
@@ -121,7 +121,7 @@ impl DeltaAlgorithm for GdeltaZstdAlgorithm {
 struct GdeltaLz4Algorithm;
 
 impl DeltaAlgorithm for GdeltaLz4Algorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "gdelta_lz4"
     }
 
@@ -152,7 +152,7 @@ impl DeltaAlgorithm for GdeltaLz4Algorithm {
         let decompressed = lz4::block::decompress(compressed_data, Some(original_size as i32))?;
 
         // Apply delta
-        decode(&decompressed, base).map_err(|e| e.into())
+        decode(&decompressed, base).map_err(std::convert::Into::into)
     }
 }
 
@@ -160,7 +160,7 @@ impl DeltaAlgorithm for GdeltaLz4Algorithm {
 struct XpatchAlgorithm;
 
 impl DeltaAlgorithm for XpatchAlgorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "xpatch"
     }
 
@@ -171,7 +171,7 @@ impl DeltaAlgorithm for XpatchAlgorithm {
     }
 
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        xpatch::delta::decode(base, delta).map_err(|e| e.into())
+        xpatch::delta::decode(base, delta).map_err(std::convert::Into::into)
     }
 }
 
@@ -180,7 +180,7 @@ impl DeltaAlgorithm for XpatchAlgorithm {
 struct Xdelta3Algorithm;
 
 impl DeltaAlgorithm for Xdelta3Algorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "xdelta3"
     }
 
@@ -197,7 +197,7 @@ impl DeltaAlgorithm for Xdelta3Algorithm {
 struct QbsdiffAlgorithm;
 
 impl DeltaAlgorithm for QbsdiffAlgorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "qbsdiff"
     }
 
@@ -219,7 +219,7 @@ impl DeltaAlgorithm for QbsdiffAlgorithm {
 struct ZstdDictAlgorithm;
 
 impl DeltaAlgorithm for ZstdDictAlgorithm {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "zstd_dict"
     }
 
@@ -421,7 +421,7 @@ fn generate_source_code(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let var_name = format!("var_{}", rng.random_range(0..100));
         let value = rng.random_range(0..1000);
 
-        data.push_str(&format!("    let {} = {};\n", var_name, value));
+        data.push_str(&format!("    let {var_name} = {value};\n"));
 
         if rng.random_bool(0.3) {
             data.push_str("    if condition {\n        do_something();\n    }\n");
@@ -524,7 +524,7 @@ fn generate_database_page(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
 
         // Padding
         let padding = rng.random_range(0..50);
-        data.extend(std::iter::repeat(0u8).take(padding));
+        data.extend(std::iter::repeat_n(0u8, padding));
     }
 
     data.truncate(size_target);
@@ -553,8 +553,7 @@ fn generate_html(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let content: String = Paragraph(3..6).fake_with_rng(rng);
 
         data.push_str(&format!(
-            "<div class=\"item\">\n  <h2>{}</h2>\n  <p>{}</p>\n</div>\n",
-            title, content
+            "<div class=\"item\">\n  <h2>{title}</h2>\n  <p>{content}</p>\n</div>\n"
         ));
     }
 
@@ -569,7 +568,7 @@ fn generate_yaml(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let key = format!("setting_{}", rng.random_range(0..100));
         let value = rng.random_range(0..1000);
 
-        data.push_str(&format!("  {}: {}\n", key, value));
+        data.push_str(&format!("  {key}: {value}\n"));
 
         if rng.random_bool(0.3) {
             data.push_str("  nested:\n    - item1\n    - item2\n");
@@ -619,7 +618,7 @@ impl ChangePattern {
             ChangePattern::MinorEdit => "minor_edit".to_string(),
             ChangePattern::ModerateEdit => "moderate_edit".to_string(),
             ChangePattern::MajorRewrite => "major_rewrite".to_string(),
-            ChangePattern::Append(n) => format!("append_{}", n),
+            ChangePattern::Append(n) => format!("append_{n}"),
             ChangePattern::Insert { position_pct, size } => {
                 format!("insert_{}pct_{}", (position_pct * 100.0) as u32, size)
             }
@@ -783,7 +782,7 @@ impl MetricsWal {
             .open(&self.path)?;
 
         let json = serde_json::to_string(metric)?;
-        writeln!(file, "{}", json)?;
+        writeln!(file, "{json}")?;
 
         Ok(())
     }
@@ -797,11 +796,9 @@ impl MetricsWal {
         let reader = BufReader::new(file);
         let mut metrics = Vec::new();
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                if let Ok(metric) = serde_json::from_str::<BenchmarkMetric>(&line) {
-                    metrics.push(metric);
-                }
+        for line in reader.lines().flatten() {
+            if let Ok(metric) = serde_json::from_str::<BenchmarkMetric>(&line) {
+                metrics.push(metric);
             }
         }
 
@@ -815,9 +812,7 @@ fn collect_hardware_info() -> HardwareInfo {
 
     let cpu_brand = sys
         .cpus()
-        .first()
-        .map(|cpu| cpu.brand().to_string())
-        .unwrap_or_else(|| "Unknown CPU".to_string());
+        .first().map_or_else(|| "Unknown CPU".to_string(), |cpu| cpu.brand().to_string());
 
     HardwareInfo {
         cpu_brand,
@@ -982,7 +977,7 @@ fn generate_markdown_report(
         .into_iter()
         .collect();
 
-    report.push_str(&format!("- **Total Tests:** {}\n", total_tests));
+    report.push_str(&format!("- **Total Tests:** {total_tests}\n"));
     report.push_str(&format!("- **Algorithms Tested:** {}\n", algorithms.len()));
     report.push_str(&format!(
         "- **Verification:** {} passed, {} failed ({:.1}% success rate)\n\n",
@@ -1020,11 +1015,10 @@ fn generate_markdown_report(
         let notes = if *all_pass {
             "All tests passed".to_string()
         } else {
-            format!("Produces corrupted output - DO NOT USE IN PRODUCTION")
+            "Produces corrupted output - DO NOT USE IN PRODUCTION".to_string()
         };
         report.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
-            algo, passed, failed, status, notes
+            "| {algo} | {passed} | {failed} | {status} | {notes} |\n"
         ));
     }
     report.push('\n');
@@ -1033,7 +1027,7 @@ fn generate_markdown_report(
     let verified_algos: Vec<String> = algo_health
         .iter()
         .filter(|(_, _, failed, _)| *failed == 0)
-        .map(|(algo, _, _, _)| algo.to_string())
+        .map(|(algo, _, _, _)| (*algo).clone())
         .collect();
 
     // Overall Rankings (ONLY VERIFIED)
@@ -1154,7 +1148,7 @@ fn generate_markdown_report(
         .into_iter()
         .collect();
 
-    let size_order = vec!["cache_friendly", "memory", "large"];
+    let size_order = ["cache_friendly", "memory", "large"];
     let ordered_sizes: Vec<&String> = size_order
         .iter()
         .filter_map(|s| sizes.iter().find(|size| size.as_str() == *s))
@@ -1169,7 +1163,7 @@ fn generate_markdown_report(
             "large" => " 2MB",
             _ => "",
         };
-        report.push_str(&format!(" {}{} |", size, typical_size));
+        report.push_str(&format!(" {size}{typical_size} |"));
     }
     report.push_str(" Trend |\n|-----------|");
     for _ in &ordered_sizes {
@@ -1178,7 +1172,7 @@ fn generate_markdown_report(
     report.push_str("-------|\n");
 
     for algo in &verified_algos {
-        report.push_str(&format!("| {} |", algo));
+        report.push_str(&format!("| {algo} |"));
         let mut ratios = Vec::new();
         for size in &ordered_sizes {
             let size_metrics: Vec<_> = metrics
@@ -1197,7 +1191,7 @@ fn generate_markdown_report(
                     .sum::<f64>()
                     / size_metrics.len() as f64;
                 ratios.push(avg_ratio);
-                report.push_str(&format!(" {:.3} |", avg_ratio));
+                report.push_str(&format!(" {avg_ratio:.3} |"));
             }
         }
 
@@ -1213,11 +1207,11 @@ fn generate_markdown_report(
             } else {
                 "⬇️ Better with size"
             };
-            report.push_str(&format!(" {} ({:+.1}%) |", trend, change_pct));
+            report.push_str(&format!(" {trend} ({change_pct:+.1}%) |"));
         } else {
             report.push_str(" - |");
         }
-        report.push_str("\n");
+        report.push('\n');
     }
     report.push('\n');
 
@@ -1230,7 +1224,7 @@ fn generate_markdown_report(
             "large" => " 2MB",
             _ => "",
         };
-        report.push_str(&format!(" {}{} |", size, typical_size));
+        report.push_str(&format!(" {size}{typical_size} |"));
     }
     report.push_str(" Throughput Trend |\n|-----------|");
     for _ in &ordered_sizes {
@@ -1239,7 +1233,7 @@ fn generate_markdown_report(
     report.push_str("------------------|\n");
 
     for algo in &verified_algos {
-        report.push_str(&format!("| {} |", algo));
+        report.push_str(&format!("| {algo} |"));
         let mut throughputs = Vec::new();
         for size in &ordered_sizes {
             let size_metrics: Vec<_> = metrics
@@ -1263,7 +1257,7 @@ fn generate_markdown_report(
                 throughputs.push(throughput);
 
                 if avg_time < 1000.0 {
-                    report.push_str(&format!(" {:.0}µs |", avg_time));
+                    report.push_str(&format!(" {avg_time:.0}µs |"));
                 } else {
                     report.push_str(&format!(" {:.2}ms |", avg_time / 1000.0));
                 }
@@ -1282,11 +1276,11 @@ fn generate_markdown_report(
             } else {
                 "⬆️ Improves with size"
             };
-            report.push_str(&format!(" {} |", trend));
+            report.push_str(&format!(" {trend} |"));
         } else {
             report.push_str(" - |");
         }
-        report.push_str("\n");
+        report.push('\n');
     }
     report.push('\n');
 
@@ -1316,7 +1310,7 @@ fn generate_markdown_report(
 
             let mut size_comparison: Vec<_> = verified_algos
                 .iter()
-                .map(|algo| {
+                .filter_map(|algo| {
                     let algo_metrics: Vec<_> = largest_metrics
                         .iter()
                         .filter(|m| m.algorithm == *algo)
@@ -1333,12 +1327,11 @@ fn generate_markdown_report(
 
                     Some((algo, avg_delta, avg_original))
                 })
-                .filter_map(|x| x)
                 .collect();
 
             size_comparison.sort_by_key(|(_, delta, _)| *delta);
 
-            let best_delta = size_comparison.first().map(|(_, d, _)| *d).unwrap_or(0);
+            let best_delta = size_comparison.first().map_or(0, |(_, d, _)| *d);
 
             for (algo, delta_size, original_size) in size_comparison {
                 let saving = original_size - delta_size;
@@ -1406,8 +1399,7 @@ fn generate_markdown_report(
 
     for (algo, std_dev, cv, rating) in consistency_scores {
         report.push_str(&format!(
-            "| {} | {:.4} | {:.1}% | {} |\n",
-            algo, std_dev, cv, rating
+            "| {algo} | {std_dev:.4} | {cv:.1}% | {rating} |\n"
         ));
     }
     report.push('\n');
@@ -1440,7 +1432,7 @@ fn generate_markdown_report(
 
         let mut format_rankings: Vec<_> = verified_algos
             .iter()
-            .map(|algo| {
+            .filter_map(|algo| {
                 let algo_format_metrics: Vec<_> = format_metrics
                     .iter()
                     .filter(|m| m.algorithm == *algo)
@@ -1468,7 +1460,6 @@ fn generate_markdown_report(
 
                 Some((algo.as_str(), avg_ratio, avg_encode, avg_decode))
             })
-            .filter_map(|x| x)
             .collect();
 
         format_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -1519,7 +1510,7 @@ fn generate_markdown_report(
 
         let mut change_rankings: Vec<_> = verified_algos
             .iter()
-            .map(|algo| {
+            .filter_map(|algo| {
                 let algo_change_metrics: Vec<_> = change_metrics
                     .iter()
                     .filter(|m| m.algorithm == *algo)
@@ -1542,7 +1533,6 @@ fn generate_markdown_report(
 
                 Some((algo.as_str(), avg_ratio, avg_encode))
             })
-            .filter_map(|x| x)
             .collect();
 
         change_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -1577,7 +1567,7 @@ fn generate_markdown_report(
             .filter(|m| m.algorithm == *algo && m.verification_passed)
             .collect();
 
-        report.push_str(&format!("### {}\n\n", algo));
+        report.push_str(&format!("### {algo}\n\n"));
         report.push_str(&format!("**Total Tests:** {}\n\n", algo_metrics.len()));
 
         let ratios: Vec<f64> = algo_metrics.iter().map(|m| m.compression_ratio).collect();
@@ -1653,17 +1643,17 @@ fn generate_markdown_report(
 
     report.push_str("|  |");
     for algo in &verified_algos {
-        report.push_str(&format!(" {} |", algo));
+        report.push_str(&format!(" {algo} |"));
     }
     report.push_str("\n|");
     report.push_str("--|");
     for _ in &verified_algos {
         report.push_str("-----|");
     }
-    report.push_str("\n");
+    report.push('\n');
 
     for algo1 in &verified_algos {
-        report.push_str(&format!("| {} |", algo1));
+        report.push_str(&format!("| {algo1} |"));
         for algo2 in &verified_algos {
             if algo1 == algo2 {
                 report.push_str(" - |");
@@ -1709,13 +1699,13 @@ fn generate_markdown_report(
             }
 
             let win_rate = if total > 0 {
-                (wins as f64 / total as f64) * 100.0
+                (f64::from(wins) / f64::from(total)) * 100.0
             } else {
                 0.0
             };
-            report.push_str(&format!(" {:.0}% |", win_rate));
+            report.push_str(&format!(" {win_rate:.0}% |"));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
     report.push('\n');
 
@@ -1761,8 +1751,7 @@ fn generate_markdown_report(
 
     for (algo, ratio, encode, efficiency, category) in tradeoffs {
         report.push_str(&format!(
-            "| {} | {:.3} | {:.3} | {:.4} | {} |\n",
-            algo, ratio, encode, efficiency, category
+            "| {algo} | {ratio:.3} | {encode:.3} | {efficiency:.4} | {category} |\n"
         ));
     }
     report.push('\n');
@@ -1850,7 +1839,7 @@ fn generate_markdown_report(
             "| Maximum Compression | {} | {:.1}% space saved | {} |\n",
             algo,
             (1.0 - ratio) * 100.0,
-            runner_up.map(|(a, _)| a.as_str()).unwrap_or("N/A")
+            runner_up.map_or("N/A", |(a, _)| a.as_str())
         ));
     }
 
@@ -1870,7 +1859,7 @@ fn generate_markdown_report(
                     / algo_metrics.len() as f64;
                 (avg_size / 1_000_000.0) / ((*time_ns as f64 / 1_000_000.0) / 1000.0)
             },
-            runner_up.map(|(a, _)| a.as_str()).unwrap_or("N/A")
+            runner_up.map_or("N/A", |(a, _)| a.as_str())
         ));
     }
 
@@ -1893,7 +1882,7 @@ fn generate_markdown_report(
         report.push_str(&format!(
             "| Real-time Decode | {} | Fastest reconstruction | {} |\n",
             algo,
-            algo_decode.get(1).map(|(a, _)| a.as_str()).unwrap_or("N/A")
+            algo_decode.get(1).map_or("N/A", |(a, _)| a.as_str())
         ));
     }
 
@@ -1912,15 +1901,14 @@ fn generate_markdown_report(
 
         if change_metrics.is_empty() {
             report.push_str(&format!(
-                "| {} | *No data* | - | Run more tests |\n",
-                change
+                "| {change} | *No data* | - | Run more tests |\n"
             ));
             continue;
         }
 
         let mut pattern_rankings: Vec<_> = verified_algos
             .iter()
-            .map(|algo| {
+            .filter_map(|algo| {
                 let algo_metrics: Vec<_> = change_metrics
                     .iter()
                     .filter(|m| m.algorithm == *algo)
@@ -1937,7 +1925,6 @@ fn generate_markdown_report(
                     / algo_metrics.len() as f64;
                 Some((algo, avg_ratio))
             })
-            .filter_map(|x| x)
             .collect();
 
         pattern_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -1950,7 +1937,7 @@ fn generate_markdown_report(
                 "| {} | {} | {} | {:.1}% compression |\n",
                 change,
                 algo,
-                runner_up.map(|(a, _)| a.as_str()).unwrap_or("-"),
+                runner_up.map_or("-", |(a, _)| a.as_str()),
                 (1.0 - ratio) * 100.0
             ));
         }
@@ -1990,7 +1977,7 @@ fn generate_markdown_report(
     // Footer
     report.push_str("---\n\n");
     report.push_str("*Generated by gdelta comprehensive benchmark suite*\n");
-    report.push_str(&format!("\n**Run more tests with:**\n"));
+    report.push_str("\n**Run more tests with:**\n");
     report.push_str("````bash\n");
     report.push_str("# Test all formats\n");
     report.push_str("cargo bench --bench comprehensive\n\n");
@@ -2002,8 +1989,7 @@ fn generate_markdown_report(
 
     std::fs::write(output_path, report)?;
     println!(
-        "\n✅ Comprehensive markdown report generated: {}",
-        output_path
+        "\n✅ Comprehensive markdown report generated: {output_path}"
     );
 
     Ok(())
@@ -2012,7 +1998,7 @@ fn generate_markdown_report(
 // Helper function for formatting bytes
 fn format_bytes(bytes: usize) -> String {
     if bytes < 1024 {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
@@ -2038,7 +2024,7 @@ fn generate_json_report(
 
     let json = serde_json::to_string_pretty(&report)?;
     std::fs::write(output_path, json)?;
-    println!("✅ JSON report generated: {}", output_path);
+    println!("✅ JSON report generated: {output_path}");
 
     Ok(())
 }
@@ -2117,25 +2103,25 @@ impl BenchmarkConfig {
     fn should_run_algorithm(&self, name: &str) -> bool {
         self.algorithms
             .as_ref()
-            .map_or(true, |list| list.contains(&name.to_string()))
+            .is_none_or(|list| list.contains(&name.to_string()))
     }
 
     fn should_run_format(&self, name: &str) -> bool {
         self.formats
             .as_ref()
-            .map_or(true, |list| list.contains(&name.to_string()))
+            .is_none_or(|list| list.contains(&name.to_string()))
     }
 
     fn should_run_pattern(&self, name: &str) -> bool {
         self.change_patterns
             .as_ref()
-            .map_or(true, |list| list.contains(&name.to_string()))
+            .is_none_or(|list| list.contains(&name.to_string()))
     }
 
     fn should_run_size(&self, name: &str) -> bool {
         self.sizes
             .as_ref()
-            .map_or(true, |list| list.contains(&name.to_string()))
+            .is_none_or(|list| list.contains(&name.to_string()))
     }
 
     fn print_info(&self) {
@@ -2184,7 +2170,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
     let report_md = get_report_md(&timestamp);
     let report_json = get_report_json(&timestamp);
 
-    println!("📁 Results will be saved with timestamp: {}", timestamp);
+    println!("📁 Results will be saved with timestamp: {timestamp}");
 
     let wal = MetricsWal::new(&wal_file).unwrap();
     let hardware = collect_hardware_info();
@@ -2265,7 +2251,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
         .collect();
 
     let total_tests = algos.len() * formats.len() * changes.len() * sizes.len();
-    println!("📊 Running {} test combinations\n", total_tests);
+    println!("📊 Running {total_tests} test combinations\n");
 
     let mut completed = 0;
     let mut early_termination = false;
@@ -2281,7 +2267,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
                     }
 
                     completed += 1;
-                    print!("\r⏳ Progress: {}/{} ", completed, total_tests);
+                    print!("\r⏳ Progress: {completed}/{total_tests} ");
                     std::io::Write::flush(&mut std::io::stdout()).ok();
 
                     let base = format.generate(*size);
@@ -2321,7 +2307,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
                                 if let Ok(delta) = algo.encode(black_box(&new), black_box(&base)) {
                                     let _ = algo.decode(black_box(&delta), black_box(&base));
                                 }
-                            })
+                            });
                         });
 
                         group.finish();

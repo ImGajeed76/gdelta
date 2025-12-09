@@ -26,10 +26,10 @@ fn main() {
                     assert_eq!(recovered, new_text);
                     println!("✓ Successfully decoded and verified!");
                 }
-                Err(e) => eprintln!("Decode error: {}", e),
+                Err(e) => eprintln!("Decode error: {e}"),
             }
         }
-        Err(e) => eprintln!("Encode error: {}", e),
+        Err(e) => eprintln!("Encode error: {e}"),
     }
 
     println!();
@@ -66,10 +66,10 @@ fn main() {
                     assert_eq!(recovered, new_data);
                     println!("✓ Successfully decoded and verified!");
                 }
-                Err(e) => eprintln!("Decode error: {}", e),
+                Err(e) => eprintln!("Decode error: {e}"),
             }
         }
-        Err(e) => eprintln!("Encode error: {}", e),
+        Err(e) => eprintln!("Encode error: {e}"),
     }
 
     println!();
@@ -103,10 +103,10 @@ fn main() {
                     assert_eq!(recovered, version2);
                     println!("✓ Successfully reconstructed version 2 from delta!");
                 }
-                Err(e) => eprintln!("Decode error: {}", e),
+                Err(e) => eprintln!("Decode error: {e}"),
             }
         }
-        Err(e) => eprintln!("Encode error: {}", e),
+        Err(e) => eprintln!("Encode error: {e}"),
     }
 
     println!();

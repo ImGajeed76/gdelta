@@ -2,7 +2,7 @@
 //!
 //! A fast delta compression algorithm for similar data chunks.
 //!
-//! GDelta efficiently encodes the differences between similar data chunks using
+//! `GDelta` efficiently encodes the differences between similar data chunks using
 //! GEAR rolling hash for pattern matching and variable-length integer encoding
 //! for space efficiency.
 //!
@@ -32,12 +32,12 @@
 //!
 //! ## Performance
 //!
-//! GDelta is optimized for:
+//! `GDelta` is optimized for:
 //! - Speed: Faster than Xdelta, Zdelta, Ddelta, and Edelta
 //! - Similar chunks: Best for data chunks 4KB - 64KB in size
 //! - Inter-chunk redundancy: Removes redundancy between similar chunks
 //!
-//! For maximum compression, combine GDelta with a general-purpose compressor
+//! For maximum compression, combine `GDelta` with a general-purpose compressor
 //! like ZSTD or LZ4.
 
 #![forbid(unsafe_code)]

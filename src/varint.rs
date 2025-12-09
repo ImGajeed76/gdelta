@@ -32,10 +32,9 @@ pub fn write_varint(buffer: &mut BufferStream, mut value: u64) {
             // Last byte: high bit is 0
             buffer.write_u8(byte_val);
             break;
-        } else {
-            // More bytes follow: high bit is 1
-            buffer.write_u8(byte_val | 0x80);
         }
+        // More bytes follow: high bit is 1
+        buffer.write_u8(byte_val | 0x80);
     }
 }
 
@@ -47,7 +46,7 @@ pub fn read_varint(buffer: &mut BufferStream) -> Result<u64> {
     loop {
         let byte = buffer.read_u8()?;
         let more = (byte & 0x80) != 0;
-        let byte_val = (byte & 0x7F) as u64;
+        let byte_val = u64::from(byte & 0x7F);
 
         value |= byte_val << shift;
         shift += VARINT_BITS;
@@ -98,10 +97,10 @@ impl DeltaUnit {
 /// - Optional varint: remaining length bits (if more=1)
 /// - Optional varint: offset (if flag=1)
 pub fn write_delta_unit(buffer: &mut BufferStream, unit: &DeltaUnit) {
-    let flag = if unit.is_copy { 1u8 } else { 0u8 };
+    let flag = u8::from(unit.is_copy);
     let head_length = (unit.length & HEAD_VARINT_MASK) as u8;
     let remaining_length = unit.length >> HEAD_VARINT_BITS;
-    let more = if remaining_length > 0 { 1u8 } else { 0u8 };
+    let more = u8::from(remaining_length > 0);
 
     // Write head byte: [flag:1][more:1][length:6]
     let head_byte = (flag << 7) | (more << 6) | head_length;
@@ -124,7 +123,7 @@ pub fn read_delta_unit(buffer: &mut BufferStream) -> Result<DeltaUnit> {
 
     let is_copy = (head_byte & 0x80) != 0;
     let more = (head_byte & 0x40) != 0;
-    let mut length = (head_byte & 0x3F) as u64;
+    let mut length = u64::from(head_byte & 0x3F);
 
     if more {
         let remaining = read_varint(buffer)?;
