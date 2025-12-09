@@ -17,17 +17,34 @@ readme = "README.md"
 wide = { version = "1.0.2", optional = true }
 
 [dev-dependencies]
-criterion = "0.8.0"
+criterion = { version = "0.8.1", features = ["html_reports"] }
+fake = { version = "4.4.0", features = ["derive", "chrono"] }
+rand = "0.9.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+sysinfo = "0.37.2"
+chrono = "0.4.42"
+xpatch = "0.1.0"
+zstd = "0.13.3"
+lz4 = "1.28.1"
+ctrlc = "3.5.1"
 
 [features]
 default = ["simd"]
 simd = ["wide"]
 
 [[bench]]
-name = "delta_benchmark"
+name = "comprehensive"
 harness = false
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
+panic = "unwind"
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
