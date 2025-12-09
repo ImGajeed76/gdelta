@@ -40,10 +40,6 @@ fn get_timestamp() -> String {
     chrono::Local::now().format("%Y%m%d_%H%M%S").to_string()
 }
 
-fn get_results_dir(timestamp: &str) -> String {
-    format!("target/benchmark_results_{}", timestamp)
-}
-
 fn get_wal_file(timestamp: &str) -> String {
     format!("target/benchmark_results_{}/metrics.wal", timestamp)
 }
@@ -176,6 +172,80 @@ impl DeltaAlgorithm for XpatchAlgorithm {
 
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         xpatch::delta::decode(base, delta).map_err(|e| e.into())
+    }
+}
+
+// xdelta3
+
+struct Xdelta3Algorithm;
+
+impl DeltaAlgorithm for Xdelta3Algorithm {
+    fn name(&self) -> &str {
+        "xdelta3"
+    }
+
+    fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        xdelta3::encode(base, new).ok_or_else(|| "xdelta3 encode failed".into())
+    }
+
+    fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        xdelta3::decode(delta, base).ok_or_else(|| "xdelta3 decode failed".into())
+    }
+}
+
+// qbsdiff - industry standard
+struct QbsdiffAlgorithm;
+
+impl DeltaAlgorithm for QbsdiffAlgorithm {
+    fn name(&self) -> &str {
+        "qbsdiff"
+    }
+
+    fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut patch = Vec::new();
+        qbsdiff::Bsdiff::new(base, new).compare(std::io::Cursor::new(&mut patch))?;
+        Ok(patch)
+    }
+
+    fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let patcher = qbsdiff::Bspatch::new(delta)?;
+        let mut target = Vec::new();
+        patcher.apply(base, std::io::Cursor::new(&mut target))?;
+        Ok(target)
+    }
+}
+
+// zstd dictionary
+struct ZstdDictAlgorithm;
+
+impl DeltaAlgorithm for ZstdDictAlgorithm {
+    fn name(&self) -> &str {
+        "zstd_dict"
+    }
+
+    fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        // Train dictionary from base file split into chunks
+        let chunk_size = base.len().min(10000);
+        let samples: Vec<&[u8]> = base.chunks(chunk_size).collect();
+
+        let dict = zstd::dict::from_samples(&samples, 100_000)?;
+
+        // Compress new file using the dictionary
+        let mut compressor = zstd::bulk::Compressor::with_dictionary(3, &dict)?;
+        Ok(compressor.compress(new)?)
+    }
+
+    fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        // Train same dictionary from base
+        let chunk_size = base.len().min(10000);
+        let samples: Vec<&[u8]> = base.chunks(chunk_size).collect();
+
+        let dict = zstd::dict::from_samples(&samples, 100_000)?;
+
+        // Decompress using the dictionary
+        let estimated_size = delta.len() * 10; // Higher estimate
+        let mut decompressor = zstd::bulk::Decompressor::with_dictionary(&dict)?;
+        Ok(decompressor.decompress(delta, estimated_size)?)
     }
 }
 
@@ -867,7 +937,7 @@ fn generate_markdown_report(
     }
 
     report.push_str(&format!(
-        "**generated:** {}\n\n",
+        "**Generated:** {}\n\n",
         chrono::DateTime::<chrono::Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC")
     ));
 
@@ -880,75 +950,30 @@ fn generate_markdown_report(
     report.push_str(&format!("OS:     {}\n", hardware.os));
     report.push_str("````\n\n");
 
+    // Table of Contents
+    report.push_str("## 📑 Table of Contents\n\n");
+    report.push_str("1. [Executive Summary](#-executive-summary)\n");
+    report.push_str("2. [Algorithm Health Status](#️-algorithm-health-status)\n");
+    report.push_str("3. [Overall Rankings](#-overall-rankings)\n");
+    report.push_str("4. [Performance Scaling by Size](#-performance-scaling-by-size)\n");
+    report.push_str("5. [Actual Delta Sizes](#-actual-delta-sizes)\n");
+    report.push_str("6. [Compression Consistency](#-compression-consistency)\n");
+    report.push_str("7. [Performance by Data Format](#-performance-by-data-format)\n");
+    report.push_str("8. [Performance by Change Pattern](#-performance-by-change-pattern)\n");
+    report.push_str("9. [Algorithm Deep Dive](#-algorithm-deep-dive)\n");
+    report.push_str("10. [Head-to-Head Comparison](#️-head-to-head-comparison)\n");
+    report.push_str("11. [Speed vs Compression Trade-offs](#️-speed-vs-compression-trade-offs)\n");
+    report.push_str("12. [Compression ROI Analysis](#-compression-roi-analysis)\n");
+    report.push_str("13. [Quick Decision Matrix](#-quick-decision-matrix)\n");
+    report.push_str("14. [Pattern-Specific Recommendations](#-pattern-specific-recommendations)\n");
+    report.push_str("15. [What NOT to Use](#-what-not-to-use)\n\n");
+
     // Executive Summary
     report.push_str("## 📊 Executive Summary\n\n");
 
     let total_tests = metrics.len();
     let passed = metrics.iter().filter(|m| m.verification_passed).count();
     let failed = total_tests - passed;
-
-    let avg_compression =
-        metrics.iter().map(|m| m.compression_ratio).sum::<f64>() / total_tests as f64;
-    let median_compression = {
-        let mut ratios: Vec<f64> = metrics.iter().map(|m| m.compression_ratio).collect();
-        ratios.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        if ratios.is_empty() {
-            0.0
-        } else {
-            ratios[ratios.len() / 2]
-        }
-    };
-
-    let best_compression = metrics.iter().min_by(|a, b| {
-        a.compression_ratio
-            .partial_cmp(&b.compression_ratio)
-            .unwrap()
-    });
-
-    let total_encode_time_ms = metrics
-        .iter()
-        .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
-        .sum::<f64>();
-    let total_decode_time_ms = metrics
-        .iter()
-        .map(|m| m.decode_time_ns as f64 / 1_000_000.0)
-        .sum::<f64>();
-
-    report.push_str(&format!("- **Total Tests:** {}\n", total_tests));
-    report.push_str(&format!(
-        "- **Verification:** {} passed, {} failed ({:.1}% success rate)\n",
-        passed,
-        failed,
-        (passed as f64 / total_tests as f64) * 100.0
-    ));
-    report.push_str(&format!(
-        "- **Average Compression:** {:.2}% of original size\n",
-        avg_compression * 100.0
-    ));
-    report.push_str(&format!(
-        "- **Median Compression:** {:.2}%\n",
-        median_compression * 100.0
-    ));
-    report.push_str(&format!(
-        "- **Best Compression:** {:.2}% ({})\n",
-        best_compression
-            .map(|m| m.compression_ratio * 100.0)
-            .unwrap_or(0.0),
-        best_compression
-            .map(|m| m.algorithm.as_str())
-            .unwrap_or("N/A")
-    ));
-    report.push_str(&format!(
-        "- **Total Encode Time:** {:.2}s\n",
-        total_encode_time_ms / 1000.0
-    ));
-    report.push_str(&format!(
-        "- **Total Decode Time:** {:.2}s\n\n",
-        total_decode_time_ms / 1000.0
-    ));
-
-    // Algorithm Comparison Matrix
-    report.push_str("## 🏆 Algorithm Performance Matrix\n\n");
 
     let algorithms: Vec<String> = metrics
         .iter()
@@ -957,63 +982,1042 @@ fn generate_markdown_report(
         .into_iter()
         .collect();
 
-    report.push_str("| Algorithm | Tests | Avg Compression | Median Compression | Best | Avg Encode (ms) | Avg Decode (ms) | Throughput (MB/s) |\n");
-    report.push_str("|-----------|-------|-----------------|--------------------|------|-----------------|-----------------|-------------------|\n");
+    report.push_str(&format!("- **Total Tests:** {}\n", total_tests));
+    report.push_str(&format!("- **Algorithms Tested:** {}\n", algorithms.len()));
+    report.push_str(&format!(
+        "- **Verification:** {} passed, {} failed ({:.1}% success rate)\n\n",
+        passed,
+        failed,
+        (passed as f64 / total_tests as f64) * 100.0
+    ));
 
-    for algo in &algorithms {
-        let algo_metrics: Vec<_> = metrics.iter().filter(|m| m.algorithm == *algo).collect();
-        let count = algo_metrics.len();
-        if count == 0 {
-            continue;
-        }
+    // VERIFICATION STATUS
+    report.push_str("## ⚠️ Algorithm Health Status\n\n");
+    report.push_str("| Algorithm | Tests Passed | Tests Failed | Status | Notes |\n");
+    report.push_str("|-----------|--------------|--------------|--------|-------|\n");
 
-        let avg_comp = algo_metrics
-            .iter()
-            .map(|m| m.compression_ratio)
-            .sum::<f64>()
-            / count as f64;
+    let mut algo_health: Vec<_> = algorithms
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics.iter().filter(|m| m.algorithm == *algo).collect();
+            let passed = algo_metrics
+                .iter()
+                .filter(|m| m.verification_passed)
+                .count();
+            let failed = algo_metrics.len() - passed;
+            let all_pass = failed == 0;
+            (algo, passed, failed, all_pass)
+        })
+        .collect();
+    algo_health.sort_by(|a, b| b.3.cmp(&a.3).then(b.1.cmp(&a.1)));
 
-        let mut comps: Vec<f64> = algo_metrics.iter().map(|m| m.compression_ratio).collect();
-        comps.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median_comp = comps[comps.len() / 2];
-        let best_comp = comps[0];
-
-        let avg_encode = algo_metrics
-            .iter()
-            .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
-            .sum::<f64>()
-            / count as f64;
-        let avg_decode = algo_metrics
-            .iter()
-            .map(|m| m.decode_time_ns as f64 / 1_000_000.0)
-            .sum::<f64>()
-            / count as f64;
-
-        let avg_size = algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>() / count as f64;
-        let throughput = (avg_size / 1_000_000.0) / (avg_encode / 1000.0);
-
+    for (algo, passed, failed, all_pass) in &algo_health {
+        let status = if *all_pass {
+            "✅ VERIFIED"
+        } else {
+            "❌ FAILED"
+        };
+        let notes = if *all_pass {
+            "All tests passed".to_string()
+        } else {
+            format!("Produces corrupted output - DO NOT USE IN PRODUCTION")
+        };
         report.push_str(&format!(
-            "| {} | {} | {:.2}% | {:.2}% | {:.2}% | {:.3} | {:.3} | {:.1} |\n",
+            "| {} | {} | {} | {} | {} |\n",
+            algo, passed, failed, status, notes
+        ));
+    }
+    report.push('\n');
+
+    // Filter verified algorithms for rankings
+    let verified_algos: Vec<String> = algo_health
+        .iter()
+        .filter(|(_, _, failed, _)| *failed == 0)
+        .map(|(algo, _, _, _)| algo.to_string())
+        .collect();
+
+    // Overall Rankings (ONLY VERIFIED)
+    report.push_str("## 🏆 Overall Rankings\n\n");
+    report.push_str("*Only verified algorithms included*\n\n");
+
+    report.push_str("### By Compression Ratio (Lower is Better)\n\n");
+    let mut algo_compression: Vec<_> = verified_algos
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo && m.verification_passed)
+                .collect();
+            let avg = algo_metrics
+                .iter()
+                .map(|m| m.compression_ratio)
+                .sum::<f64>()
+                / algo_metrics.len() as f64;
+            (algo, avg)
+        })
+        .collect();
+    algo_compression.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    report.push_str("| Rank | Algorithm | Avg Ratio | Interpretation |\n");
+    report.push_str("|------|-----------|-----------|----------------|\n");
+    for (i, (algo, ratio)) in algo_compression.iter().enumerate() {
+        let savings = (1.0 - ratio) * 100.0;
+        report.push_str(&format!(
+            "| {} | {} | {:.3} | {:.1}% space saved |\n",
+            i + 1,
             algo,
-            count,
-            avg_comp * 100.0,
-            median_comp * 100.0,
-            best_comp * 100.0,
-            avg_encode,
-            avg_decode,
+            ratio,
+            savings
+        ));
+    }
+    report.push('\n');
+
+    report.push_str("### By Encode Speed (Lower is Better)\n\n");
+    let mut algo_encode: Vec<_> = verified_algos
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo && m.verification_passed)
+                .collect();
+            let avg = algo_metrics.iter().map(|m| m.encode_time_ns).sum::<u128>()
+                / algo_metrics.len() as u128;
+            (algo, avg)
+        })
+        .collect();
+    algo_encode.sort_by_key(|a| a.1);
+
+    report.push_str("| Rank | Algorithm | Avg Encode Time | Throughput |\n");
+    report.push_str("|------|-----------|-----------------|------------|\n");
+    for (i, (algo, time_ns)) in algo_encode.iter().enumerate() {
+        let ms = *time_ns as f64 / 1_000_000.0;
+        let algo_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.algorithm == **algo && m.verification_passed)
+            .collect();
+        let avg_size =
+            algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>() / algo_metrics.len() as f64;
+        let throughput = (avg_size / 1_000_000.0) / (ms / 1000.0);
+        report.push_str(&format!(
+            "| {} | {} | {:.3}ms | {:.1} MB/s |\n",
+            i + 1,
+            algo,
+            ms,
             throughput
         ));
     }
     report.push('\n');
 
+    report.push_str("### By Decode Speed (Lower is Better)\n\n");
+    let mut algo_decode: Vec<_> = verified_algos
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo && m.verification_passed)
+                .collect();
+            let avg = algo_metrics.iter().map(|m| m.decode_time_ns).sum::<u128>()
+                / algo_metrics.len() as u128;
+            (algo, avg)
+        })
+        .collect();
+    algo_decode.sort_by_key(|a| a.1);
+
+    report.push_str("| Rank | Algorithm | Avg Decode Time | Throughput |\n");
+    report.push_str("|------|-----------|-----------------|------------|\n");
+    for (i, (algo, time_ns)) in algo_decode.iter().enumerate() {
+        let ms = *time_ns as f64 / 1_000_000.0;
+        let algo_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.algorithm == **algo && m.verification_passed)
+            .collect();
+        let avg_size =
+            algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>() / algo_metrics.len() as f64;
+        let throughput = (avg_size / 1_000_000.0) / (ms / 1000.0);
+        report.push_str(&format!(
+            "| {} | {} | {:.3}ms | {:.1} MB/s |\n",
+            i + 1,
+            algo,
+            ms,
+            throughput
+        ));
+    }
+    report.push('\n');
+
+    // SCALING ANALYSIS
+    report.push_str("## 📈 Performance Scaling by Size\n\n");
+
+    let sizes: Vec<String> = metrics
+        .iter()
+        .map(|m| m.cache_level.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let size_order = vec!["cache_friendly", "memory", "large"];
+    let ordered_sizes: Vec<&String> = size_order
+        .iter()
+        .filter_map(|s| sizes.iter().find(|size| size.as_str() == *s))
+        .collect();
+
+    report.push_str("### Compression Ratio Scaling\n\n");
+    report.push_str("| Algorithm |");
+    for size in &ordered_sizes {
+        let typical_size = match size.as_str() {
+            "cache_friendly" => " 16KB",
+            "memory" => " 256KB",
+            "large" => " 2MB",
+            _ => "",
+        };
+        report.push_str(&format!(" {}{} |", size, typical_size));
+    }
+    report.push_str(" Trend |\n|-----------|");
+    for _ in &ordered_sizes {
+        report.push_str("----------|");
+    }
+    report.push_str("-------|\n");
+
+    for algo in &verified_algos {
+        report.push_str(&format!("| {} |", algo));
+        let mut ratios = Vec::new();
+        for size in &ordered_sizes {
+            let size_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| {
+                    m.algorithm == *algo && m.cache_level == **size && m.verification_passed
+                })
+                .collect();
+
+            if size_metrics.is_empty() {
+                report.push_str(" N/A |");
+            } else {
+                let avg_ratio = size_metrics
+                    .iter()
+                    .map(|m| m.compression_ratio)
+                    .sum::<f64>()
+                    / size_metrics.len() as f64;
+                ratios.push(avg_ratio);
+                report.push_str(&format!(" {:.3} |", avg_ratio));
+            }
+        }
+
+        // Trend analysis
+        if ratios.len() >= 2 {
+            let first = ratios[0];
+            let last = ratios[ratios.len() - 1];
+            let change_pct = ((last - first) / first) * 100.0;
+            let trend = if change_pct.abs() < 5.0 {
+                "➡️ Stable"
+            } else if change_pct > 0.0 {
+                "⬆️ Worse with size"
+            } else {
+                "⬇️ Better with size"
+            };
+            report.push_str(&format!(" {} ({:+.1}%) |", trend, change_pct));
+        } else {
+            report.push_str(" - |");
+        }
+        report.push_str("\n");
+    }
+    report.push('\n');
+
+    report.push_str("### Encode Speed Scaling\n\n");
+    report.push_str("| Algorithm |");
+    for size in &ordered_sizes {
+        let typical_size = match size.as_str() {
+            "cache_friendly" => " 16KB",
+            "memory" => " 256KB",
+            "large" => " 2MB",
+            _ => "",
+        };
+        report.push_str(&format!(" {}{} |", size, typical_size));
+    }
+    report.push_str(" Throughput Trend |\n|-----------|");
+    for _ in &ordered_sizes {
+        report.push_str("----------|");
+    }
+    report.push_str("------------------|\n");
+
+    for algo in &verified_algos {
+        report.push_str(&format!("| {} |", algo));
+        let mut throughputs = Vec::new();
+        for size in &ordered_sizes {
+            let size_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| {
+                    m.algorithm == *algo && m.cache_level == **size && m.verification_passed
+                })
+                .collect();
+
+            if size_metrics.is_empty() {
+                report.push_str(" N/A |");
+            } else {
+                let avg_time = size_metrics
+                    .iter()
+                    .map(|m| m.encode_time_ns as f64 / 1_000.0)
+                    .sum::<f64>()
+                    / size_metrics.len() as f64;
+                let avg_size =
+                    size_metrics.iter().map(|m| m.new_size).sum::<usize>() / size_metrics.len();
+                let throughput = (avg_size as f64 / 1_000_000.0) / (avg_time / 1_000_000.0);
+                throughputs.push(throughput);
+
+                if avg_time < 1000.0 {
+                    report.push_str(&format!(" {:.0}µs |", avg_time));
+                } else {
+                    report.push_str(&format!(" {:.2}ms |", avg_time / 1000.0));
+                }
+            }
+        }
+
+        // Throughput trend
+        if throughputs.len() >= 2 {
+            let first = throughputs[0];
+            let last = throughputs[throughputs.len() - 1];
+            let change_pct = ((last - first) / first) * 100.0;
+            let trend = if change_pct.abs() < 10.0 {
+                "➡️ Linear scaling"
+            } else if change_pct < 0.0 {
+                "⬇️ Slows with size"
+            } else {
+                "⬆️ Improves with size"
+            };
+            report.push_str(&format!(" {} |", trend));
+        } else {
+            report.push_str(" - |");
+        }
+        report.push_str("\n");
+    }
+    report.push('\n');
+
+    // ACTUAL DELTA SIZES
+    report.push_str("## 💾 Actual Delta Sizes\n\n");
+
+    // Find largest size category
+    let largest_size = ordered_sizes.last();
+    if let Some(largest) = largest_size {
+        let largest_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.cache_level == **largest && m.verification_passed)
+            .collect();
+
+        if !largest_metrics.is_empty() {
+            let typical_original = largest_metrics[0].new_size;
+            report.push_str(&format!(
+                "For a {} file with edits:\n\n",
+                format_bytes(typical_original)
+            ));
+            report.push_str(
+                "| Algorithm | Delta Size | Original Size | Absolute Saving | Relative to Best |\n",
+            );
+            report.push_str(
+                "|-----------|------------|---------------|-----------------|------------------|\n",
+            );
+
+            let mut size_comparison: Vec<_> = verified_algos
+                .iter()
+                .map(|algo| {
+                    let algo_metrics: Vec<_> = largest_metrics
+                        .iter()
+                        .filter(|m| m.algorithm == *algo)
+                        .collect();
+
+                    if algo_metrics.is_empty() {
+                        return None;
+                    }
+
+                    let avg_delta = algo_metrics.iter().map(|m| m.delta_size).sum::<usize>()
+                        / algo_metrics.len();
+                    let avg_original =
+                        algo_metrics.iter().map(|m| m.new_size).sum::<usize>() / algo_metrics.len();
+
+                    Some((algo, avg_delta, avg_original))
+                })
+                .filter_map(|x| x)
+                .collect();
+
+            size_comparison.sort_by_key(|(_, delta, _)| *delta);
+
+            let best_delta = size_comparison.first().map(|(_, d, _)| *d).unwrap_or(0);
+
+            for (algo, delta_size, original_size) in size_comparison {
+                let saving = original_size - delta_size;
+                let saving_pct = (saving as f64 / original_size as f64) * 100.0;
+                let relative = if delta_size > best_delta {
+                    format!("+{}", format_bytes(delta_size - best_delta))
+                } else if delta_size < best_delta {
+                    format!("-{}", format_bytes(best_delta - delta_size))
+                } else {
+                    "Best".to_string()
+                };
+
+                report.push_str(&format!(
+                    "| {} | {} | {} | {} ({:.1}%) | {} |\n",
+                    algo,
+                    format_bytes(delta_size),
+                    format_bytes(original_size),
+                    format_bytes(saving),
+                    saving_pct,
+                    relative
+                ));
+            }
+            report.push('\n');
+        }
+    }
+
+    // CONSISTENCY SCORE
+    report.push_str("## 🎯 Compression Consistency\n\n");
+    report.push_str("How predictable is each algorithm's compression ratio?\n\n");
+    report.push_str("| Algorithm | Std Dev | Coefficient of Variation | Consistency Rating |\n");
+    report.push_str("|-----------|---------|--------------------------|--------------------|\n");
+
+    let mut consistency_scores: Vec<_> = verified_algos
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo && m.verification_passed)
+                .collect();
+
+            let ratios: Vec<f64> = algo_metrics.iter().map(|m| m.compression_ratio).collect();
+            let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
+            let variance =
+                ratios.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / ratios.len() as f64;
+            let std_dev = variance.sqrt();
+            let cv = (std_dev / mean) * 100.0;
+
+            let rating = if cv < 5.0 {
+                "⭐⭐⭐⭐⭐ Very Consistent"
+            } else if cv < 10.0 {
+                "⭐⭐⭐⭐ Consistent"
+            } else if cv < 15.0 {
+                "⭐⭐⭐ Moderate"
+            } else if cv < 25.0 {
+                "⭐⭐ Variable"
+            } else {
+                "⭐ Highly Variable"
+            };
+
+            (algo, std_dev, cv, rating)
+        })
+        .collect();
+
+    consistency_scores.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+
+    for (algo, std_dev, cv, rating) in consistency_scores {
+        report.push_str(&format!(
+            "| {} | {:.4} | {:.1}% | {} |\n",
+            algo, std_dev, cv, rating
+        ));
+    }
+    report.push('\n');
+
+    // Performance by Data Format
+    let formats: Vec<String> = metrics
+        .iter()
+        .map(|m| m.data_format.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    report.push_str("## 📁 Performance by Data Format\n\n");
+
+    for format in &formats {
+        let format_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.data_format == *format && m.verification_passed)
+            .collect();
+
+        if format_metrics.is_empty() {
+            continue;
+        }
+
+        report.push_str(&format!(
+            "### {} ({} tests)\n\n",
+            format,
+            format_metrics.len()
+        ));
+
+        let mut format_rankings: Vec<_> = verified_algos
+            .iter()
+            .map(|algo| {
+                let algo_format_metrics: Vec<_> = format_metrics
+                    .iter()
+                    .filter(|m| m.algorithm == *algo)
+                    .collect();
+
+                if algo_format_metrics.is_empty() {
+                    return None;
+                }
+
+                let avg_ratio = algo_format_metrics
+                    .iter()
+                    .map(|m| m.compression_ratio)
+                    .sum::<f64>()
+                    / algo_format_metrics.len() as f64;
+                let avg_encode = algo_format_metrics
+                    .iter()
+                    .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
+                    .sum::<f64>()
+                    / algo_format_metrics.len() as f64;
+                let avg_decode = algo_format_metrics
+                    .iter()
+                    .map(|m| m.decode_time_ns as f64 / 1_000_000.0)
+                    .sum::<f64>()
+                    / algo_format_metrics.len() as f64;
+
+                Some((algo.as_str(), avg_ratio, avg_encode, avg_decode))
+            })
+            .filter_map(|x| x)
+            .collect();
+
+        format_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        report.push_str("| Rank | Algorithm | Ratio | Encode (ms) | Decode (ms) | Score |\n");
+        report.push_str("|------|-----------|-------|-------------|-------------|-------|\n");
+
+        for (i, (algo, ratio, encode, decode)) in format_rankings.iter().enumerate() {
+            let score = ratio * 0.6 + (encode / 1000.0) * 0.3 + (decode / 1000.0) * 0.1;
+            report.push_str(&format!(
+                "| {} | {} | {:.3} | {:.3} | {:.3} | {:.4} |\n",
+                i + 1,
+                algo,
+                ratio,
+                encode,
+                decode,
+                score
+            ));
+        }
+        report.push('\n');
+    }
+
+    // Performance by Change Pattern
+    let changes: Vec<String> = metrics
+        .iter()
+        .map(|m| m.change_pattern.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    report.push_str("## 🔄 Performance by Change Pattern\n\n");
+
+    for change in &changes {
+        let change_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.change_pattern == *change && m.verification_passed)
+            .collect();
+
+        if change_metrics.is_empty() {
+            continue;
+        }
+
+        report.push_str(&format!(
+            "### {} ({} tests)\n\n",
+            change,
+            change_metrics.len()
+        ));
+
+        let mut change_rankings: Vec<_> = verified_algos
+            .iter()
+            .map(|algo| {
+                let algo_change_metrics: Vec<_> = change_metrics
+                    .iter()
+                    .filter(|m| m.algorithm == *algo)
+                    .collect();
+
+                if algo_change_metrics.is_empty() {
+                    return None;
+                }
+
+                let avg_ratio = algo_change_metrics
+                    .iter()
+                    .map(|m| m.compression_ratio)
+                    .sum::<f64>()
+                    / algo_change_metrics.len() as f64;
+                let avg_encode = algo_change_metrics
+                    .iter()
+                    .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
+                    .sum::<f64>()
+                    / algo_change_metrics.len() as f64;
+
+                Some((algo.as_str(), avg_ratio, avg_encode))
+            })
+            .filter_map(|x| x)
+            .collect();
+
+        change_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        report.push_str("| Rank | Algorithm | Compression | Encode Time | Efficiency Score |\n");
+        report.push_str("|------|-----------|-------------|-------------|------------------|\n");
+
+        for (i, (algo, ratio, encode)) in change_rankings.iter().enumerate() {
+            let efficiency = if *encode > 0.0 {
+                (1.0 - *ratio) / (*encode / 1000.0)
+            } else {
+                0.0
+            };
+            report.push_str(&format!(
+                "| {} | {} | {:.3} | {:.3}ms | {:.4} |\n",
+                i + 1,
+                algo,
+                ratio,
+                encode,
+                efficiency
+            ));
+        }
+        report.push('\n');
+    }
+
+    // Algorithm Deep Dive
+    report.push_str("## 🔍 Algorithm Deep Dive\n\n");
+
+    for algo in &verified_algos {
+        let algo_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.algorithm == *algo && m.verification_passed)
+            .collect();
+
+        report.push_str(&format!("### {}\n\n", algo));
+        report.push_str(&format!("**Total Tests:** {}\n\n", algo_metrics.len()));
+
+        let ratios: Vec<f64> = algo_metrics.iter().map(|m| m.compression_ratio).collect();
+        let avg_ratio = ratios.iter().sum::<f64>() / ratios.len() as f64;
+        let mut sorted_ratios = ratios.clone();
+        sorted_ratios.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median_ratio = sorted_ratios[sorted_ratios.len() / 2];
+        let best_ratio = sorted_ratios[0];
+        let worst_ratio = sorted_ratios[sorted_ratios.len() - 1];
+
+        report.push_str("**Compression Statistics:**\n\n");
+        report.push_str("| Metric | Value | Space Saved |\n");
+        report.push_str("|--------|-------|-------------|\n");
+        report.push_str(&format!(
+            "| Average | {:.3} | {:.1}% |\n",
+            avg_ratio,
+            (1.0 - avg_ratio) * 100.0
+        ));
+        report.push_str(&format!(
+            "| Median | {:.3} | {:.1}% |\n",
+            median_ratio,
+            (1.0 - median_ratio) * 100.0
+        ));
+        report.push_str(&format!(
+            "| Best | {:.3} | {:.1}% |\n",
+            best_ratio,
+            (1.0 - best_ratio) * 100.0
+        ));
+        report.push_str(&format!(
+            "| Worst | {:.3} | {:.1}% |\n\n",
+            worst_ratio,
+            (1.0 - worst_ratio) * 100.0
+        ));
+
+        let best_test = algo_metrics
+            .iter()
+            .min_by(|a, b| {
+                a.compression_ratio
+                    .partial_cmp(&b.compression_ratio)
+                    .unwrap()
+            })
+            .unwrap();
+        let worst_test = algo_metrics
+            .iter()
+            .max_by(|a, b| {
+                a.compression_ratio
+                    .partial_cmp(&b.compression_ratio)
+                    .unwrap()
+            })
+            .unwrap();
+
+        report.push_str("**Performance Highlights:**\n\n");
+        report.push_str(&format!(
+            "- Best on: {} / {} / {} ({:.3} ratio)\n",
+            best_test.data_format,
+            best_test.change_pattern,
+            best_test.cache_level,
+            best_test.compression_ratio
+        ));
+        report.push_str(&format!(
+            "- Worst on: {} / {} / {} ({:.3} ratio)\n\n",
+            worst_test.data_format,
+            worst_test.change_pattern,
+            worst_test.cache_level,
+            worst_test.compression_ratio
+        ));
+    }
+
+    // Head-to-Head Comparison
+    report.push_str("## ⚔️ Head-to-Head Comparison\n\n");
+    report.push_str("### Win Matrix (Compression Ratio)\n\n");
+    report.push_str("Rows beat Columns (% of direct matchups won)\n\n");
+
+    report.push_str("|  |");
+    for algo in &verified_algos {
+        report.push_str(&format!(" {} |", algo));
+    }
+    report.push_str("\n|");
+    report.push_str("--|");
+    for _ in &verified_algos {
+        report.push_str("-----|");
+    }
+    report.push_str("\n");
+
+    for algo1 in &verified_algos {
+        report.push_str(&format!("| {} |", algo1));
+        for algo2 in &verified_algos {
+            if algo1 == algo2 {
+                report.push_str(" - |");
+                continue;
+            }
+
+            let mut wins = 0;
+            let mut total = 0;
+
+            for format in &formats {
+                for change in &changes {
+                    for size in &sizes {
+                        let m1: Vec<_> = metrics
+                            .iter()
+                            .filter(|m| {
+                                m.algorithm == *algo1
+                                    && m.data_format == *format
+                                    && m.change_pattern == *change
+                                    && m.cache_level == *size
+                                    && m.verification_passed
+                            })
+                            .collect();
+
+                        let m2: Vec<_> = metrics
+                            .iter()
+                            .filter(|m| {
+                                m.algorithm == *algo2
+                                    && m.data_format == *format
+                                    && m.change_pattern == *change
+                                    && m.cache_level == *size
+                                    && m.verification_passed
+                            })
+                            .collect();
+
+                        if !m1.is_empty() && !m2.is_empty() {
+                            total += 1;
+                            if m1[0].compression_ratio < m2[0].compression_ratio {
+                                wins += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let win_rate = if total > 0 {
+                (wins as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
+            report.push_str(&format!(" {:.0}% |", win_rate));
+        }
+        report.push_str("\n");
+    }
+    report.push('\n');
+
+    // Speed vs Compression Trade-offs
+    report.push_str("## ⚖️ Speed vs Compression Trade-offs\n\n");
+    report.push_str("| Algorithm | Avg Ratio | Avg Encode (ms) | Efficiency | Category |\n");
+    report.push_str("|-----------|-----------|-----------------|------------|----------|\n");
+
+    let mut tradeoffs: Vec<_> = verified_algos
+        .iter()
+        .map(|algo| {
+            let algo_metrics: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo && m.verification_passed)
+                .collect();
+            let avg_ratio = algo_metrics
+                .iter()
+                .map(|m| m.compression_ratio)
+                .sum::<f64>()
+                / algo_metrics.len() as f64;
+            let avg_encode = algo_metrics
+                .iter()
+                .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
+                .sum::<f64>()
+                / algo_metrics.len() as f64;
+            let efficiency = (1.0 - avg_ratio) / (avg_encode / 1000.0);
+
+            let category = if avg_ratio < 0.15 && avg_encode < 5.0 {
+                "🏆 Best Overall"
+            } else if avg_ratio < 0.15 {
+                "🎯 Best Compression"
+            } else if avg_encode < 3.0 {
+                "⚡ Fastest"
+            } else {
+                "⚖️ Balanced"
+            };
+
+            (algo, avg_ratio, avg_encode, efficiency, category)
+        })
+        .collect();
+
+    tradeoffs.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+
+    for (algo, ratio, encode, efficiency, category) in tradeoffs {
+        report.push_str(&format!(
+            "| {} | {:.3} | {:.3} | {:.4} | {} |\n",
+            algo, ratio, encode, efficiency, category
+        ));
+    }
+    report.push('\n');
+
+    // ROI ANALYSIS
+    report.push_str("## 💰 Compression ROI Analysis\n\n");
+    report.push_str("Is better compression worth slower encode speed?\n\n");
+    report.push_str("| Comparison | Time Difference | Compression Difference | Bytes Saved per ms | Worth It? |\n");
+    report.push_str("|------------|-----------------|------------------------|-------------------|----------|\n");
+
+    for i in 0..verified_algos.len() {
+        for j in (i + 1)..verified_algos.len() {
+            let algo1 = &verified_algos[i];
+            let algo2 = &verified_algos[j];
+
+            let m1: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo1 && m.verification_passed)
+                .collect();
+            let m2: Vec<_> = metrics
+                .iter()
+                .filter(|m| m.algorithm == *algo2 && m.verification_passed)
+                .collect();
+
+            if m1.is_empty() || m2.is_empty() {
+                continue;
+            }
+
+            let avg_time1 = m1
+                .iter()
+                .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
+                .sum::<f64>()
+                / m1.len() as f64;
+            let avg_time2 = m2
+                .iter()
+                .map(|m| m.encode_time_ns as f64 / 1_000_000.0)
+                .sum::<f64>()
+                / m2.len() as f64;
+            let avg_ratio1 = m1.iter().map(|m| m.compression_ratio).sum::<f64>() / m1.len() as f64;
+            let avg_ratio2 = m2.iter().map(|m| m.compression_ratio).sum::<f64>() / m2.len() as f64;
+            let avg_size = m1.iter().map(|m| m.new_size as f64).sum::<f64>() / m1.len() as f64;
+
+            let time_diff = (avg_time2 - avg_time1).abs();
+            let ratio_diff = (avg_ratio2 - avg_ratio1).abs();
+            let bytes_saved = (ratio_diff * avg_size) / time_diff;
+
+            let faster = if avg_time1 < avg_time2 { algo1 } else { algo2 };
+            let better_compression = if avg_ratio1 < avg_ratio2 {
+                algo1
+            } else {
+                algo2
+            };
+
+            let worth_it = if bytes_saved > 100_000.0 {
+                "✅ Yes"
+            } else if bytes_saved > 10_000.0 {
+                "🤔 Maybe"
+            } else {
+                "❌ Minimal gain"
+            };
+
+            report.push_str(&format!(
+                "| {} → {} | {:+.3}ms | {:.1}% | {:.0} KB/ms | {} |\n",
+                faster,
+                better_compression,
+                time_diff,
+                ratio_diff * 100.0,
+                bytes_saved / 1000.0,
+                worth_it
+            ));
+        }
+    }
+    report.push('\n');
+
+    // QUICK DECISION MATRIX
+    report.push_str("## 🎯 Quick Decision Matrix\n\n");
+    report.push_str("| Your Priority | Recommended | Why | Alternative |\n");
+    report.push_str("|---------------|-------------|-----|-------------|\n");
+
+    // Max compression
+    let best_compression = algo_compression.first();
+    if let Some((algo, ratio)) = best_compression {
+        let runner_up = algo_compression.get(1);
+        report.push_str(&format!(
+            "| Maximum Compression | {} | {:.1}% space saved | {} |\n",
+            algo,
+            (1.0 - ratio) * 100.0,
+            runner_up.map(|(a, _)| a.as_str()).unwrap_or("N/A")
+        ));
+    }
+
+    // Max speed
+    let fastest = algo_encode.first();
+    if let Some((algo, time_ns)) = fastest {
+        let runner_up = algo_encode.get(1);
+        report.push_str(&format!(
+            "| Maximum Speed | {} | {:.1} MB/s encode | {} |\n",
+            algo,
+            {
+                let algo_metrics: Vec<_> = metrics
+                    .iter()
+                    .filter(|m| m.algorithm == **algo && m.verification_passed)
+                    .collect();
+                let avg_size = algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>()
+                    / algo_metrics.len() as f64;
+                (avg_size / 1_000_000.0) / ((*time_ns as f64 / 1_000_000.0) / 1000.0)
+            },
+            runner_up.map(|(a, _)| a.as_str()).unwrap_or("N/A")
+        ));
+    }
+
+    // Balanced
+    let balanced_idx = verified_algos.len() / 2;
+    if balanced_idx < verified_algos.len() {
+        let balanced = &verified_algos[balanced_idx];
+        report.push_str(&format!(
+            "| Balanced | {} | Good mix of speed and compression | {} |\n",
+            balanced,
+            verified_algos
+                .get(balanced_idx + 1)
+                .unwrap_or(&verified_algos[0])
+        ));
+    }
+
+    // Real-time
+    let fastest_decode = algo_decode.first();
+    if let Some((algo, _)) = fastest_decode {
+        report.push_str(&format!(
+            "| Real-time Decode | {} | Fastest reconstruction | {} |\n",
+            algo,
+            algo_decode.get(1).map(|(a, _)| a.as_str()).unwrap_or("N/A")
+        ));
+    }
+
+    report.push('\n');
+
+    // PATTERN-SPECIFIC RECOMMENDATIONS
+    report.push_str("## 🔄 Pattern-Specific Recommendations\n\n");
+    report.push_str("| Change Pattern | Best Algorithm | Runner-up | Key Metric |\n");
+    report.push_str("|----------------|----------------|-----------|------------|\n");
+
+    for change in &changes {
+        let change_metrics: Vec<_> = metrics
+            .iter()
+            .filter(|m| m.change_pattern == *change && m.verification_passed)
+            .collect();
+
+        if change_metrics.is_empty() {
+            report.push_str(&format!(
+                "| {} | *No data* | - | Run more tests |\n",
+                change
+            ));
+            continue;
+        }
+
+        let mut pattern_rankings: Vec<_> = verified_algos
+            .iter()
+            .map(|algo| {
+                let algo_metrics: Vec<_> = change_metrics
+                    .iter()
+                    .filter(|m| m.algorithm == *algo)
+                    .collect();
+
+                if algo_metrics.is_empty() {
+                    return None;
+                }
+
+                let avg_ratio = algo_metrics
+                    .iter()
+                    .map(|m| m.compression_ratio)
+                    .sum::<f64>()
+                    / algo_metrics.len() as f64;
+                Some((algo, avg_ratio))
+            })
+            .filter_map(|x| x)
+            .collect();
+
+        pattern_rankings.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let best = pattern_rankings.first();
+        let runner_up = pattern_rankings.get(1);
+
+        if let Some((algo, ratio)) = best {
+            report.push_str(&format!(
+                "| {} | {} | {} | {:.1}% compression |\n",
+                change,
+                algo,
+                runner_up.map(|(a, _)| a.as_str()).unwrap_or("-"),
+                (1.0 - ratio) * 100.0
+            ));
+        }
+    }
+    report.push('\n');
+
+    // WHAT NOT TO USE
+    report.push_str("## 🚫 What NOT to Use\n\n");
+
+    let failed_algos: Vec<_> = algo_health
+        .iter()
+        .filter(|(_, _, failed, _)| *failed > 0)
+        .collect();
+
+    if !failed_algos.is_empty() {
+        report.push_str("### ❌ Failed Verification\n\n");
+        report.push_str("| Algorithm | Reason | Status |\n");
+        report.push_str("|-----------|--------|--------|\n");
+
+        for (algo, _, failed, _) in failed_algos {
+            report.push_str(&format!(
+                "| {} | Failed {} out of {} tests - produces corrupted output | ⛔ DO NOT USE |\n",
+                algo,
+                failed,
+                metrics.iter().filter(|m| m.algorithm == **algo).count()
+            ));
+        }
+        report.push('\n');
+    }
+
+    report.push_str("### 💡 Additional Guidance\n\n");
+    report.push_str("- **For production use:** Only use algorithms with ✅ VERIFIED status\n");
+    report.push_str("- **For critical data:** Always verify reconstruction matches original\n");
+    report.push_str("- **For large files:** Run full benchmark with `BENCH_MODE=full`\n");
+    report.push_str("- **For specific use cases:** Test with your actual data patterns\n\n");
+
     // Footer
     report.push_str("---\n\n");
-    report.push_str("*generated by gdelta comprehensive benchmark suite*\n");
+    report.push_str("*Generated by gdelta comprehensive benchmark suite*\n");
+    report.push_str(&format!("\n**Run more tests with:**\n"));
+    report.push_str("````bash\n");
+    report.push_str("# Test all formats\n");
+    report.push_str("cargo bench --bench comprehensive\n\n");
+    report.push_str("# Test specific scenarios\n");
+    report.push_str("BENCH_FORMATS=csv,logs BENCH_PATTERNS=append_1024 cargo bench\n\n");
+    report.push_str("# Full benchmark (takes longer)\n");
+    report.push_str("BENCH_MODE=full cargo bench\n");
+    report.push_str("````\n");
 
     std::fs::write(output_path, report)?;
-    println!("\n✅ Markdown report generated: {}", output_path);
+    println!(
+        "\n✅ Comprehensive markdown report generated: {}",
+        output_path
+    );
 
     Ok(())
+}
+
+// Helper function for formatting bytes
+fn format_bytes(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 fn generate_json_report(
@@ -1176,7 +2180,6 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
     setup_signal_handler();
 
     let timestamp = get_timestamp();
-    let results_dir = get_results_dir(&timestamp);
     let wal_file = get_wal_file(&timestamp);
     let report_md = get_report_md(&timestamp);
     let report_json = get_report_json(&timestamp);
@@ -1195,6 +2198,9 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
         Box::new(GdeltaZstdAlgorithm),
         Box::new(GdeltaLz4Algorithm),
         Box::new(XpatchAlgorithm),
+        Box::new(Xdelta3Algorithm),
+        Box::new(QbsdiffAlgorithm),
+        Box::new(ZstdDictAlgorithm),
     ];
 
     let all_formats = vec![
@@ -1331,7 +2337,13 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
     let all_metrics = wal.read_all().unwrap();
     if !all_metrics.is_empty() {
         generate_markdown_report(&all_metrics, &hardware, early_termination, &report_md).unwrap();
-        generate_json_report(all_metrics, hardware.clone(), early_termination, &report_json).unwrap();
+        generate_json_report(
+            all_metrics,
+            hardware.clone(),
+            early_termination,
+            &report_json,
+        )
+        .unwrap();
     }
 }
 
