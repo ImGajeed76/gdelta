@@ -31,6 +31,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::System;
+use std::cmp::Ordering as CmpOrdering;
 
 // ============================================================================
 // Configuration
@@ -125,6 +126,7 @@ impl DeltaAlgorithm for GdeltaLz4Algorithm {
         "gdelta_lz4"
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let delta = encode(new, base)?;
 
@@ -139,6 +141,8 @@ impl DeltaAlgorithm for GdeltaLz4Algorithm {
         Ok(result)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_wrap)]
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         // Extract the original size
         if delta.len() < 4 {
@@ -308,7 +312,7 @@ impl DataFormat {
         }
     }
 
-    fn generate(&self, size_target: usize) -> Vec<u8> {
+    fn generate(self, size_target: usize) -> Vec<u8> {
         let mut rng = StdRng::seed_from_u64(42);
 
         match self {
@@ -339,13 +343,13 @@ fn generate_json(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let email: String = SafeEmail().fake_with_rng(rng);
         let id: u32 = rng.random_range(1000..99999);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "  {{\"id\": {}, \"name\": \"{}\", \"email\": \"{}\", \"active\": {}}},\n",
             id,
             name,
             email,
             rng.random_bool(0.8)
-        ));
+        ).as_str());
     }
 
     data.push_str("]\n");
@@ -359,12 +363,12 @@ fn generate_xml(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let name: String = Name().fake_with_rng(rng);
         let content: String = Sentence(3..10).fake_with_rng(rng);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "  <item id=\"{}\">\n    <name>{}</name>\n    <content>{}</content>\n  </item>\n",
             rng.random_range(1000..99999),
             name,
             content
-        ));
+        ).as_str());
     }
 
     data.push_str("</root>\n");
@@ -377,17 +381,17 @@ fn generate_csv(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
     while data.len() < size_target {
         let name: String = Name().fake_with_rng(rng);
         let email: String = SafeEmail().fake_with_rng(rng);
-        let timestamp = 1700000000 + rng.random_range(0..10000000);
+        let timestamp = 1_700_000_000 + rng.random_range(0..10_000_000);
         let value = rng.random_range(0.0..1000.0);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "{},{},{},{},{:.2}\n",
             rng.random_range(1000..99999),
             name,
             email,
             timestamp,
             value
-        ));
+        ).as_str());
     }
 
     data.into_bytes()
@@ -399,16 +403,16 @@ fn generate_logs(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
 
     while data.len() < size_target {
         let level = levels[rng.random_range(0..levels.len())];
-        let timestamp = 1700000000 + rng.random_range(0..10000000);
+        let timestamp = 1_700_000_000 + rng.random_range(0..10_000_000);
         let message: String = Sentence(5..15).fake_with_rng(rng);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "[{}] {} [thread-{}] {}\n",
             timestamp,
             level,
             rng.random_range(1..20),
             message
-        ));
+        ).as_str());
     }
 
     data.into_bytes()
@@ -421,7 +425,7 @@ fn generate_source_code(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let var_name = format!("var_{}", rng.random_range(0..100));
         let value = rng.random_range(0..1000);
 
-        data.push_str(&format!("    let {var_name} = {value};\n"));
+        data.push_str(format!("    let {var_name} = {value};\n").as_str());
 
         if rng.random_bool(0.3) {
             data.push_str("    if condition {\n        do_something();\n    }\n");
@@ -436,7 +440,7 @@ fn generate_markdown(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
     let mut data = String::from("# Document Title\n\n");
 
     while data.len() < size_target {
-        data.push_str(&format!("## Section {}\n\n", rng.random_range(1..100)));
+        data.push_str(format!("## Section {}\n\n", rng.random_range(1..100)).as_str());
 
         let paragraph: String = Paragraph(3..8).fake_with_rng(rng);
         data.push_str(&paragraph);
@@ -457,12 +461,12 @@ fn generate_sql_dump(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let name: String = Name().fake_with_rng(rng);
         let email: String = SafeEmail().fake_with_rng(rng);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "INSERT INTO users (id, name, email) VALUES ({}, '{}', '{}');\n",
             rng.random_range(1000..99999),
             name,
             email
-        ));
+        ).as_str());
     }
 
     data.into_bytes()
@@ -490,6 +494,8 @@ fn generate_compressed_like(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
     (0..size_target).map(|_| rng.random()).collect()
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
 fn generate_image_data(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
     let mut data = Vec::new();
 
@@ -552,9 +558,9 @@ fn generate_html(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let title: String = Sentence(3..8).fake_with_rng(rng);
         let content: String = Paragraph(3..6).fake_with_rng(rng);
 
-        data.push_str(&format!(
+        data.push_str(format!(
             "<div class=\"item\">\n  <h2>{title}</h2>\n  <p>{content}</p>\n</div>\n"
-        ));
+        ).as_str());
     }
 
     data.push_str("</body>\n</html>\n");
@@ -568,7 +574,7 @@ fn generate_yaml(size_target: usize, rng: &mut StdRng) -> Vec<u8> {
         let key = format!("setting_{}", rng.random_range(0..100));
         let value = rng.random_range(0..1000);
 
-        data.push_str(&format!("  {key}: {value}\n"));
+        data.push_str(format!("  {key}: {value}\n").as_str());
 
         if rng.random_bool(0.3) {
             data.push_str("  nested:\n    - item1\n    - item2\n");
@@ -613,6 +619,8 @@ enum ChangePattern {
 }
 
 impl ChangePattern {
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     fn name(&self) -> String {
         match self {
             ChangePattern::MinorEdit => "minor_edit".to_string(),
@@ -631,6 +639,9 @@ impl ChangePattern {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_precision_loss)]
+    #[allow(clippy::cast_sign_loss)]
     fn apply(&self, base: &[u8]) -> Vec<u8> {
         let mut rng = StdRng::seed_from_u64(123);
 
@@ -796,7 +807,7 @@ impl MetricsWal {
         let reader = BufReader::new(file);
         let mut metrics = Vec::new();
 
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Ok(metric) = serde_json::from_str::<BenchmarkMetric>(&line) {
                 metrics.push(metric);
             }
@@ -830,6 +841,7 @@ fn collect_hardware_info() -> HardwareInfo {
 // Benchmark Execution
 // ============================================================================
 
+#[allow(clippy::cast_precision_loss)]
 fn run_benchmark(
     algo: &dyn DeltaAlgorithm,
     format: DataFormat,
@@ -858,7 +870,7 @@ fn run_benchmark(
 
     // Decode with error handling
     let decode_start = Instant::now();
-    let reconstructed = match algo.decode(&delta, base) {
+    let reconstructed = match algo.decode(&delta[..], base) {
         Ok(r) => r,
         Err(e) => {
             eprintln!(
@@ -911,6 +923,8 @@ fn run_benchmark(
 // Report generation
 // ============================================================================
 
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::cast_precision_loss)]
 fn generate_markdown_report(
     metrics: &[BenchmarkMetric],
     hardware: &HardwareInfo,
@@ -931,18 +945,18 @@ fn generate_markdown_report(
         report.push_str("**⚠️ PARTIAL RESULTS - Benchmark was interrupted by user**\n\n");
     }
 
-    report.push_str(&format!(
+    report.push_str(format!(
         "**Generated:** {}\n\n",
         chrono::DateTime::<chrono::Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC")
-    ));
+    ).as_str());
 
     // Hardware
     report.push_str("## 💻 Hardware Configuration\n\n");
     report.push_str("````\n");
-    report.push_str(&format!("CPU:    {}\n", hardware.cpu_brand));
-    report.push_str(&format!("Cores:  {}\n", hardware.cpu_cores));
-    report.push_str(&format!("RAM:    {} MB\n", hardware.total_memory_mb));
-    report.push_str(&format!("OS:     {}\n", hardware.os));
+    report.push_str(format!("CPU:    {}\n", hardware.cpu_brand).as_str());
+    report.push_str(format!("Cores:  {}\n", hardware.cpu_cores).as_str());
+    report.push_str(format!("RAM:    {} MB\n", hardware.total_memory_mb).as_str());
+    report.push_str(format!("OS:     {}\n", hardware.os).as_str());
     report.push_str("````\n\n");
 
     // Table of Contents
@@ -977,14 +991,14 @@ fn generate_markdown_report(
         .into_iter()
         .collect();
 
-    report.push_str(&format!("- **Total Tests:** {total_tests}\n"));
-    report.push_str(&format!("- **Algorithms Tested:** {}\n", algorithms.len()));
-    report.push_str(&format!(
+    report.push_str(format!("- **Total Tests:** {total_tests}\n").as_str());
+    report.push_str(format!("- **Algorithms Tested:** {}\n", algorithms.len()).as_str());
+    report.push_str(format!(
         "- **Verification:** {} passed, {} failed ({:.1}% success rate)\n\n",
         passed,
         failed,
         (passed as f64 / total_tests as f64) * 100.0
-    ));
+    ).as_str());
 
     // VERIFICATION STATUS
     report.push_str("## ⚠️ Algorithm Health Status\n\n");
@@ -1017,9 +1031,9 @@ fn generate_markdown_report(
         } else {
             "Produces corrupted output - DO NOT USE IN PRODUCTION".to_string()
         };
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {algo} | {passed} | {failed} | {status} | {notes} |\n"
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1056,13 +1070,13 @@ fn generate_markdown_report(
     report.push_str("|------|-----------|-----------|----------------|\n");
     for (i, (algo, ratio)) in algo_compression.iter().enumerate() {
         let savings = (1.0 - ratio) * 100.0;
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {} | {} | {:.3} | {:.1}% space saved |\n",
             i + 1,
             algo,
             ratio,
             savings
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1092,13 +1106,13 @@ fn generate_markdown_report(
         let avg_size =
             algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>() / algo_metrics.len() as f64;
         let throughput = (avg_size / 1_000_000.0) / (ms / 1000.0);
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {} | {} | {:.3}ms | {:.1} MB/s |\n",
             i + 1,
             algo,
             ms,
             throughput
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1128,13 +1142,13 @@ fn generate_markdown_report(
         let avg_size =
             algo_metrics.iter().map(|m| m.new_size as f64).sum::<f64>() / algo_metrics.len() as f64;
         let throughput = (avg_size / 1_000_000.0) / (ms / 1000.0);
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {} | {} | {:.3}ms | {:.1} MB/s |\n",
             i + 1,
             algo,
             ms,
             throughput
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1163,7 +1177,7 @@ fn generate_markdown_report(
             "large" => " 2MB",
             _ => "",
         };
-        report.push_str(&format!(" {size}{typical_size} |"));
+        report.push_str(format!(" {size}{typical_size} |").as_str());
     }
     report.push_str(" Trend |\n|-----------|");
     for _ in &ordered_sizes {
@@ -1172,7 +1186,7 @@ fn generate_markdown_report(
     report.push_str("-------|\n");
 
     for algo in &verified_algos {
-        report.push_str(&format!("| {algo} |"));
+        report.push_str(format!("| {algo} |").as_str());
         let mut ratios = Vec::new();
         for size in &ordered_sizes {
             let size_metrics: Vec<_> = metrics
@@ -1191,7 +1205,7 @@ fn generate_markdown_report(
                     .sum::<f64>()
                     / size_metrics.len() as f64;
                 ratios.push(avg_ratio);
-                report.push_str(&format!(" {avg_ratio:.3} |"));
+                report.push_str(format!(" {avg_ratio:.3} |").as_str());
             }
         }
 
@@ -1207,7 +1221,7 @@ fn generate_markdown_report(
             } else {
                 "⬇️ Better with size"
             };
-            report.push_str(&format!(" {trend} ({change_pct:+.1}%) |"));
+            report.push_str(format!(" {trend} ({change_pct:+.1}%) |").as_str());
         } else {
             report.push_str(" - |");
         }
@@ -1224,7 +1238,7 @@ fn generate_markdown_report(
             "large" => " 2MB",
             _ => "",
         };
-        report.push_str(&format!(" {size}{typical_size} |"));
+        report.push_str(format!(" {size}{typical_size} |").as_str());
     }
     report.push_str(" Throughput Trend |\n|-----------|");
     for _ in &ordered_sizes {
@@ -1233,7 +1247,7 @@ fn generate_markdown_report(
     report.push_str("------------------|\n");
 
     for algo in &verified_algos {
-        report.push_str(&format!("| {algo} |"));
+        report.push_str(format!("| {algo} |").as_str());
         let mut throughputs = Vec::new();
         for size in &ordered_sizes {
             let size_metrics: Vec<_> = metrics
@@ -1257,9 +1271,9 @@ fn generate_markdown_report(
                 throughputs.push(throughput);
 
                 if avg_time < 1000.0 {
-                    report.push_str(&format!(" {avg_time:.0}µs |"));
+                    report.push_str(format!(" {avg_time:.0}µs |").as_str());
                 } else {
-                    report.push_str(&format!(" {:.2}ms |", avg_time / 1000.0));
+                    report.push_str(format!(" {:.2}ms |", avg_time / 1000.0).as_str());
                 }
             }
         }
@@ -1276,7 +1290,7 @@ fn generate_markdown_report(
             } else {
                 "⬆️ Improves with size"
             };
-            report.push_str(&format!(" {trend} |"));
+            report.push_str(format!(" {trend} |").as_str());
         } else {
             report.push_str(" - |");
         }
@@ -1297,10 +1311,10 @@ fn generate_markdown_report(
 
         if !largest_metrics.is_empty() {
             let typical_original = largest_metrics[0].new_size;
-            report.push_str(&format!(
+            report.push_str(format!(
                 "For a {} file with edits:\n\n",
                 format_bytes(typical_original)
-            ));
+            ).as_str());
             report.push_str(
                 "| Algorithm | Delta Size | Original Size | Absolute Saving | Relative to Best |\n",
             );
@@ -1336,15 +1350,13 @@ fn generate_markdown_report(
             for (algo, delta_size, original_size) in size_comparison {
                 let saving = original_size - delta_size;
                 let saving_pct = (saving as f64 / original_size as f64) * 100.0;
-                let relative = if delta_size > best_delta {
-                    format!("+{}", format_bytes(delta_size - best_delta))
-                } else if delta_size < best_delta {
-                    format!("-{}", format_bytes(best_delta - delta_size))
-                } else {
-                    "Best".to_string()
+                let relative = match delta_size.cmp(&best_delta) {
+                    CmpOrdering::Greater => format!("+{}", format_bytes(delta_size - best_delta)),
+                    CmpOrdering::Less => format!("-{}", format_bytes(best_delta - delta_size)),
+                    CmpOrdering::Equal => "Best".to_string(),
                 };
 
-                report.push_str(&format!(
+                report.push_str(format!(
                     "| {} | {} | {} | {} ({:.1}%) | {} |\n",
                     algo,
                     format_bytes(delta_size),
@@ -1352,7 +1364,7 @@ fn generate_markdown_report(
                     format_bytes(saving),
                     saving_pct,
                     relative
-                ));
+                ).as_str());
             }
             report.push('\n');
         }
@@ -1398,9 +1410,9 @@ fn generate_markdown_report(
     consistency_scores.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
     for (algo, std_dev, cv, rating) in consistency_scores {
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {algo} | {std_dev:.4} | {cv:.1}% | {rating} |\n"
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1424,11 +1436,11 @@ fn generate_markdown_report(
             continue;
         }
 
-        report.push_str(&format!(
+        report.push_str(format!(
             "### {} ({} tests)\n\n",
             format,
             format_metrics.len()
-        ));
+        ).as_str());
 
         let mut format_rankings: Vec<_> = verified_algos
             .iter()
@@ -1469,7 +1481,7 @@ fn generate_markdown_report(
 
         for (i, (algo, ratio, encode, decode)) in format_rankings.iter().enumerate() {
             let score = ratio * 0.6 + (encode / 1000.0) * 0.3 + (decode / 1000.0) * 0.1;
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {} | {} | {:.3} | {:.3} | {:.3} | {:.4} |\n",
                 i + 1,
                 algo,
@@ -1477,7 +1489,7 @@ fn generate_markdown_report(
                 encode,
                 decode,
                 score
-            ));
+            ).as_str());
         }
         report.push('\n');
     }
@@ -1502,11 +1514,11 @@ fn generate_markdown_report(
             continue;
         }
 
-        report.push_str(&format!(
+        report.push_str(format!(
             "### {} ({} tests)\n\n",
             change,
             change_metrics.len()
-        ));
+        ).as_str());
 
         let mut change_rankings: Vec<_> = verified_algos
             .iter()
@@ -1546,14 +1558,14 @@ fn generate_markdown_report(
             } else {
                 0.0
             };
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {} | {} | {:.3} | {:.3}ms | {:.4} |\n",
                 i + 1,
                 algo,
                 ratio,
                 encode,
                 efficiency
-            ));
+            ).as_str());
         }
         report.push('\n');
     }
@@ -1567,8 +1579,8 @@ fn generate_markdown_report(
             .filter(|m| m.algorithm == *algo && m.verification_passed)
             .collect();
 
-        report.push_str(&format!("### {algo}\n\n"));
-        report.push_str(&format!("**Total Tests:** {}\n\n", algo_metrics.len()));
+        report.push_str(format!("### {algo}\n\n").as_str());
+        report.push_str(format!("**Total Tests:** {}\n\n", algo_metrics.len()).as_str());
 
         let ratios: Vec<f64> = algo_metrics.iter().map(|m| m.compression_ratio).collect();
         let avg_ratio = ratios.iter().sum::<f64>() / ratios.len() as f64;
@@ -1581,26 +1593,26 @@ fn generate_markdown_report(
         report.push_str("**Compression Statistics:**\n\n");
         report.push_str("| Metric | Value | Space Saved |\n");
         report.push_str("|--------|-------|-------------|\n");
-        report.push_str(&format!(
+        report.push_str(format!(
             "| Average | {:.3} | {:.1}% |\n",
             avg_ratio,
             (1.0 - avg_ratio) * 100.0
-        ));
-        report.push_str(&format!(
+        ).as_str());
+        report.push_str(format!(
             "| Median | {:.3} | {:.1}% |\n",
             median_ratio,
             (1.0 - median_ratio) * 100.0
-        ));
-        report.push_str(&format!(
+        ).as_str());
+        report.push_str(format!(
             "| Best | {:.3} | {:.1}% |\n",
             best_ratio,
             (1.0 - best_ratio) * 100.0
-        ));
-        report.push_str(&format!(
+        ).as_str());
+        report.push_str(format!(
             "| Worst | {:.3} | {:.1}% |\n\n",
             worst_ratio,
             (1.0 - worst_ratio) * 100.0
-        ));
+        ).as_str());
 
         let best_test = algo_metrics
             .iter()
@@ -1620,20 +1632,20 @@ fn generate_markdown_report(
             .unwrap();
 
         report.push_str("**Performance Highlights:**\n\n");
-        report.push_str(&format!(
+        report.push_str(format!(
             "- Best on: {} / {} / {} ({:.3} ratio)\n",
             best_test.data_format,
             best_test.change_pattern,
             best_test.cache_level,
             best_test.compression_ratio
-        ));
-        report.push_str(&format!(
+        ).as_str());
+        report.push_str(format!(
             "- Worst on: {} / {} / {} ({:.3} ratio)\n\n",
             worst_test.data_format,
             worst_test.change_pattern,
             worst_test.cache_level,
             worst_test.compression_ratio
-        ));
+        ).as_str());
     }
 
     // Head-to-Head Comparison
@@ -1643,7 +1655,7 @@ fn generate_markdown_report(
 
     report.push_str("|  |");
     for algo in &verified_algos {
-        report.push_str(&format!(" {algo} |"));
+        report.push_str(format!(" {algo} |").as_str());
     }
     report.push_str("\n|");
     report.push_str("--|");
@@ -1653,7 +1665,7 @@ fn generate_markdown_report(
     report.push('\n');
 
     for algo1 in &verified_algos {
-        report.push_str(&format!("| {algo1} |"));
+        report.push_str(format!("| {algo1} |").as_str());
         for algo2 in &verified_algos {
             if algo1 == algo2 {
                 report.push_str(" - |");
@@ -1703,7 +1715,7 @@ fn generate_markdown_report(
             } else {
                 0.0
             };
-            report.push_str(&format!(" {win_rate:.0}% |"));
+            report.push_str(format!(" {win_rate:.0}% |").as_str());
         }
         report.push('\n');
     }
@@ -1750,9 +1762,9 @@ fn generate_markdown_report(
     tradeoffs.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
 
     for (algo, ratio, encode, efficiency, category) in tradeoffs {
-        report.push_str(&format!(
+        report.push_str(format!(
             "| {algo} | {ratio:.3} | {encode:.3} | {efficiency:.4} | {category} |\n"
-        ));
+        ).as_str());
     }
     report.push('\n');
 
@@ -1813,7 +1825,7 @@ fn generate_markdown_report(
                 "❌ Minimal gain"
             };
 
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {} → {} | {:+.3}ms | {:.1}% | {:.0} KB/ms | {} |\n",
                 faster,
                 better_compression,
@@ -1821,7 +1833,7 @@ fn generate_markdown_report(
                 ratio_diff * 100.0,
                 bytes_saved / 1000.0,
                 worth_it
-            ));
+            ).as_str());
         }
     }
     report.push('\n');
@@ -1835,19 +1847,19 @@ fn generate_markdown_report(
     let best_compression = algo_compression.first();
     if let Some((algo, ratio)) = best_compression {
         let runner_up = algo_compression.get(1);
-        report.push_str(&format!(
+        report.push_str(format!(
             "| Maximum Compression | {} | {:.1}% space saved | {} |\n",
             algo,
             (1.0 - ratio) * 100.0,
             runner_up.map_or("N/A", |(a, _)| a.as_str())
-        ));
+        ).as_str());
     }
 
     // Max speed
     let fastest = algo_encode.first();
     if let Some((algo, time_ns)) = fastest {
         let runner_up = algo_encode.get(1);
-        report.push_str(&format!(
+        report.push_str(format!(
             "| Maximum Speed | {} | {:.1} MB/s encode | {} |\n",
             algo,
             {
@@ -1860,30 +1872,30 @@ fn generate_markdown_report(
                 (avg_size / 1_000_000.0) / ((*time_ns as f64 / 1_000_000.0) / 1000.0)
             },
             runner_up.map_or("N/A", |(a, _)| a.as_str())
-        ));
+        ).as_str());
     }
 
     // Balanced
     let balanced_idx = verified_algos.len() / 2;
     if balanced_idx < verified_algos.len() {
         let balanced = &verified_algos[balanced_idx];
-        report.push_str(&format!(
+        report.push_str(format!(
             "| Balanced | {} | Good mix of speed and compression | {} |\n",
             balanced,
             verified_algos
                 .get(balanced_idx + 1)
                 .unwrap_or(&verified_algos[0])
-        ));
+        ).as_str());
     }
 
     // Real-time
     let fastest_decode = algo_decode.first();
     if let Some((algo, _)) = fastest_decode {
-        report.push_str(&format!(
+        report.push_str(format!(
             "| Real-time Decode | {} | Fastest reconstruction | {} |\n",
             algo,
             algo_decode.get(1).map_or("N/A", |(a, _)| a.as_str())
-        ));
+        ).as_str());
     }
 
     report.push('\n');
@@ -1900,9 +1912,9 @@ fn generate_markdown_report(
             .collect();
 
         if change_metrics.is_empty() {
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {change} | *No data* | - | Run more tests |\n"
-            ));
+            ).as_str());
             continue;
         }
 
@@ -1933,13 +1945,13 @@ fn generate_markdown_report(
         let runner_up = pattern_rankings.get(1);
 
         if let Some((algo, ratio)) = best {
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {} | {} | {} | {:.1}% compression |\n",
                 change,
                 algo,
                 runner_up.map_or("-", |(a, _)| a.as_str()),
                 (1.0 - ratio) * 100.0
-            ));
+            ).as_str());
         }
     }
     report.push('\n');
@@ -1958,12 +1970,12 @@ fn generate_markdown_report(
         report.push_str("|-----------|--------|--------|\n");
 
         for (algo, _, failed, _) in failed_algos {
-            report.push_str(&format!(
+            report.push_str(format!(
                 "| {} | Failed {} out of {} tests - produces corrupted output | ⛔ DO NOT USE |\n",
                 algo,
                 failed,
                 metrics.iter().filter(|m| m.algorithm == **algo).count()
-            ));
+            ).as_str());
         }
         report.push('\n');
     }
@@ -1996,6 +2008,7 @@ fn generate_markdown_report(
 }
 
 // Helper function for formatting bytes
+#[allow(clippy::cast_precision_loss)]
 fn format_bytes(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
@@ -2162,17 +2175,18 @@ impl BenchmarkConfig {
 // Criterion Benchmarks
 // ============================================================================
 
-fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
+#[allow(clippy::too_many_lines)]
+fn run_benchmarks_with_config(c: &mut Criterion, config: &BenchmarkConfig) {
     setup_signal_handler();
 
     let timestamp = get_timestamp();
-    let wal_file = get_wal_file(&timestamp);
-    let report_md = get_report_md(&timestamp);
-    let report_json = get_report_json(&timestamp);
+    let wal_file = get_wal_file(timestamp.as_str());
+    let report_md = get_report_md(timestamp.as_str());
+    let report_json = get_report_json(timestamp.as_str());
 
     println!("📁 Results will be saved with timestamp: {timestamp}");
 
-    let wal = MetricsWal::new(&wal_file).unwrap();
+    let wal = MetricsWal::new(wal_file.as_str()).unwrap();
     let hardware = collect_hardware_info();
 
     println!("\n🚀 Starting comprehensive delta compression benchmarks...\n");
@@ -2335,7 +2349,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: BenchmarkConfig) {
 
 fn comprehensive_benchmark(c: &mut Criterion) {
     let config = BenchmarkConfig::from_env();
-    run_benchmarks_with_config(c, config);
+    run_benchmarks_with_config(c, &config);
 }
 
 criterion_group!(benches, comprehensive_benchmark);

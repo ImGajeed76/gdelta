@@ -67,6 +67,12 @@ pub use error::{GDeltaError, Result};
 ///
 /// A `Vec<u8>` containing the encoded delta, or a [`GDeltaError`] if encoding fails.
 ///
+/// # Errors
+///
+/// Currently, encoding does not fail under normal circumstances. The `Result` type
+/// is used for API consistency with `decode` and to allow for future validation
+/// or error conditions without breaking the API.
+///
 /// # Examples
 ///
 /// ```
@@ -103,6 +109,13 @@ pub fn encode(new_data: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
 /// A `Vec<u8>` containing the reconstructed data, or a [`GDeltaError`] if
 /// decoding fails (e.g., corrupted delta data).
 ///
+/// # Errors
+///
+/// Returns `GDeltaError::InvalidDelta` if:
+/// - The delta data is corrupted or malformed
+/// - The instruction length exceeds the delta size
+/// - A copy instruction references data beyond the base data bounds
+///
 /// # Examples
 ///
 /// ```
@@ -133,7 +146,7 @@ mod tests {
     fn test_encode_decode_identical() {
         let data = b"Hello, World!";
         let delta = encode(data, data).unwrap();
-        let recovered = decode(&delta, data).unwrap();
+        let recovered = decode(&delta[..], data).unwrap();
         assert_eq!(recovered, data);
     }
 
@@ -143,7 +156,7 @@ mod tests {
         let new = b"The quick brown cat jumps over the lazy dog";
 
         let delta = encode(new, base).unwrap();
-        let recovered = decode(&delta, base).unwrap();
+        let recovered = decode(&delta[..], base).unwrap();
         assert_eq!(recovered, new);
     }
 
@@ -153,11 +166,12 @@ mod tests {
         let new = b"";
 
         let delta = encode(new, base).unwrap();
-        let recovered = decode(&delta, base).unwrap();
+        let recovered = decode(&delta[..], base).unwrap();
         assert_eq!(recovered, new);
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn test_encode_decode_large() {
         let mut base = vec![0u8; 100_000];
         let mut new = vec![0u8; 100_000];

@@ -50,7 +50,7 @@ impl BufferStream {
     /// Returns a reference to the underlying buffer.
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
-        &self.buffer
+        &self.buffer[..]
     }
 
     /// Consumes the buffer and returns the underlying vector.

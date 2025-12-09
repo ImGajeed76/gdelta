@@ -1,7 +1,8 @@
 //! Basic usage example for gdelta.
 
 use gdelta::{decode, encode};
-
+#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_possible_truncation)]
 fn main() {
     // Example 1: Simple text modification
     println!("=== Example 1: Simple Text Modification ===");
@@ -21,7 +22,7 @@ fn main() {
             );
 
             // Decode to verify
-            match decode(&delta, base_text) {
+            match decode(&delta[..], base_text) {
                 Ok(recovered) => {
                     assert_eq!(recovered, new_text);
                     println!("✓ Successfully decoded and verified!");

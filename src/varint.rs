@@ -39,6 +39,7 @@ pub fn write_varint(buffer: &mut BufferStream, mut value: u64) {
 }
 
 /// Reads a variable-length integer from the buffer.
+#[allow(clippy::cast_lossless)]
 pub fn read_varint(buffer: &mut BufferStream) -> Result<u64> {
     let mut value = 0u64;
     let mut shift = 0u8;
@@ -46,7 +47,7 @@ pub fn read_varint(buffer: &mut BufferStream) -> Result<u64> {
     loop {
         let byte = buffer.read_u8()?;
         let more = (byte & 0x80) != 0;
-        let byte_val = u64::from(byte & 0x7F);
+        let byte_val = (byte & 0x7F) as u64;
 
         value |= byte_val << shift;
         shift += VARINT_BITS;
@@ -96,11 +97,12 @@ impl DeltaUnit {
 /// - Head byte: [flag:1][more:1][length:6]
 /// - Optional varint: remaining length bits (if more=1)
 /// - Optional varint: offset (if flag=1)
+#[allow(clippy::cast_lossless)]
 pub fn write_delta_unit(buffer: &mut BufferStream, unit: &DeltaUnit) {
-    let flag = u8::from(unit.is_copy);
+    let flag = (unit.is_copy) as u8;
     let head_length = (unit.length & HEAD_VARINT_MASK) as u8;
     let remaining_length = unit.length >> HEAD_VARINT_BITS;
-    let more = u8::from(remaining_length > 0);
+    let more = (remaining_length > 0) as u8;
 
     // Write head byte: [flag:1][more:1][length:6]
     let head_byte = (flag << 7) | (more << 6) | head_length;
@@ -118,12 +120,13 @@ pub fn write_delta_unit(buffer: &mut BufferStream, unit: &DeltaUnit) {
 }
 
 /// Reads a delta unit from the buffer.
+#[allow(clippy::cast_lossless)]
 pub fn read_delta_unit(buffer: &mut BufferStream) -> Result<DeltaUnit> {
     let head_byte = buffer.read_u8()?;
 
     let is_copy = (head_byte & 0x80) != 0;
     let more = (head_byte & 0x40) != 0;
-    let mut length = u64::from(head_byte & 0x3F);
+    let mut length = (head_byte & 0x3F) as u64;
 
     if more {
         let remaining = read_varint(buffer)?;
@@ -188,7 +191,7 @@ mod tests {
     fn test_delta_unit_large_length() {
         let mut buffer = BufferStream::with_capacity(20);
 
-        let unit = DeltaUnit::literal(100000);
+        let unit = DeltaUnit::literal(100_000);
         write_delta_unit(&mut buffer, &unit);
 
         buffer.set_position(0);

@@ -13,6 +13,7 @@ const MIN_MATCH_LENGTH: usize = 16;
 pub const CHUNK_SIZE: usize = 300 * 1024;
 
 /// Encodes the delta between new data and base data.
+#[allow(clippy::unnecessary_wraps)]
 pub fn encode(new_data: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
     let new_size = new_data.len();
     let base_size = base_data.len();
@@ -50,7 +51,7 @@ pub fn encode(new_data: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
             &mut data_stream,
         );
 
-        return finalize_delta(instruction_stream, data_stream);
+        return Ok(finalize_delta(&instruction_stream, &data_stream));
     }
 
     // Write prefix instruction if present
@@ -72,11 +73,11 @@ pub fn encode(new_data: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
         prefix_size,
         new_size - suffix_size,
         base_size - suffix_size,
-        &hash_table,
+        &hash_table[..],
         hash_shift,
         &mut instruction_stream,
         &mut data_stream,
-    )?;
+    );
 
     // Write suffix instruction if present
     if suffix_size > 0 {
@@ -84,7 +85,7 @@ pub fn encode(new_data: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
         write_delta_unit(&mut instruction_stream, &unit);
     }
 
-    finalize_delta(instruction_stream, data_stream)
+    Ok(finalize_delta(&instruction_stream, &data_stream))
 }
 
 /// Finds the length of the common prefix between two byte slices.
@@ -217,6 +218,7 @@ fn encode_trivial_case(
 
 /// Encodes the middle section of the data using hash table lookups.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::cast_possible_truncation)]
 fn encode_middle_section(
     new_data: &[u8],
     base_data: &[u8],
@@ -227,7 +229,7 @@ fn encode_middle_section(
     hash_shift: u32,
     instruction_stream: &mut BufferStream,
     data_stream: &mut BufferStream,
-) -> Result<()> {
+) {
     if start >= end || end - start < WORD_SIZE {
         // Write remaining data as literal
         if start < end {
@@ -235,7 +237,7 @@ fn encode_middle_section(
             write_delta_unit(instruction_stream, &unit);
             data_stream.write_bytes(&new_data[start..end]);
         }
-        return Ok(());
+        return;
     }
 
     let mut pos = start;
@@ -292,8 +294,6 @@ fn encode_middle_section(
         write_delta_unit(instruction_stream, &unit);
         data_stream.write_bytes(&new_data[literal_start..end]);
     }
-
-    Ok(())
 }
 
 /// Extends a match as far as possible.
@@ -361,7 +361,7 @@ fn extend_match(
 }
 
 /// Finalizes the delta by combining instruction and data streams.
-fn finalize_delta(instruction_stream: BufferStream, data_stream: BufferStream) -> Result<Vec<u8>> {
+fn finalize_delta(instruction_stream: &BufferStream, data_stream: &BufferStream) -> Vec<u8> {
     let mut result = BufferStream::with_capacity(instruction_stream.len() + data_stream.len() + 10);
 
     // Write instruction length as varint
@@ -373,10 +373,11 @@ fn finalize_delta(instruction_stream: BufferStream, data_stream: BufferStream) -
     // Write data
     result.write_bytes(data_stream.as_slice());
 
-    Ok(result.into_vec())
+    result.into_vec()
 }
 
 /// Decodes delta data using the base data.
+#[allow(clippy::cast_possible_truncation)]
 pub fn decode(delta: &[u8], base_data: &[u8]) -> Result<Vec<u8>> {
     let mut delta_stream = BufferStream::from_slice(delta);
 
@@ -453,7 +454,7 @@ mod tests {
         let new = b"The quick brown cat jumps over the lazy dog";
 
         let delta = encode(new, base).unwrap();
-        let decoded = decode(&delta, base).unwrap();
+        let decoded = decode(&delta[..], base).unwrap();
 
         assert_eq!(decoded, new);
     }
@@ -463,7 +464,7 @@ mod tests {
         let data = b"Same data on both sides";
 
         let delta = encode(data, data).unwrap();
-        let decoded = decode(&delta, data).unwrap();
+        let decoded = decode(&delta[..], data).unwrap();
 
         assert_eq!(decoded, data);
         // Delta should be very small for identical data
@@ -476,7 +477,7 @@ mod tests {
         let new = b"";
 
         let delta = encode(new, base).unwrap();
-        let decoded = decode(&delta, base).unwrap();
+        let decoded = decode(&delta[..], base).unwrap();
 
         assert_eq!(decoded, new);
     }

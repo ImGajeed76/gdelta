@@ -8,7 +8,7 @@ fn test_basic_encode_decode() {
     let new = b"Hello, Rust!";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -18,7 +18,7 @@ fn test_identical_data() {
     let data = b"Identical data on both sides";
 
     let delta = encode(data, data).unwrap();
-    let recovered = decode(&delta, data).unwrap();
+    let recovered = decode(&delta[..], data).unwrap();
 
     assert_eq!(recovered, data);
 }
@@ -29,7 +29,7 @@ fn test_completely_different() {
     let new = b"BBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -40,7 +40,7 @@ fn test_empty_new_data() {
     let new = b"";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -51,12 +51,14 @@ fn test_empty_base_data() {
     let new = b"Some new data here";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
 
 #[test]
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_precision_loss)]
 fn test_large_data() {
     // Create 100KB of data with patterns
     let mut base = vec![0u8; 100_000];
@@ -101,7 +103,7 @@ fn test_text_similarity() {
                Ut enim ad maxim veniam, quis nostrud exercitation ullamco laboris.";
 
     let delta = encode(new.as_bytes(), base.as_bytes()).unwrap();
-    let recovered = decode(&delta, base.as_bytes()).unwrap();
+    let recovered = decode(&delta[..], base.as_bytes()).unwrap();
 
     assert_eq!(recovered, new.as_bytes());
     assert!(delta.len() < new.len());
@@ -113,7 +115,7 @@ fn test_prefix_only() {
     let new = b"Hello, World! This is different.";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -124,7 +126,7 @@ fn test_suffix_only() {
     let new = b"Beginning differs. Common ending.";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -135,7 +137,7 @@ fn test_middle_insertion() {
     let new = b"The quick brown fox jumps.";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -146,7 +148,7 @@ fn test_middle_deletion() {
     let new = b"The quick fox jumps.";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -157,7 +159,7 @@ fn test_repeated_pattern() {
     let new = b"ABCABCABCXYZABCABCABCABC";
 
     let delta = encode(new, base).unwrap();
-    let recovered = decode(&delta, base).unwrap();
+    let recovered = decode(&delta[..], base).unwrap();
 
     assert_eq!(recovered, new);
 }
@@ -172,8 +174,8 @@ fn test_binary_data() {
     new[500] = 88;
     new[900] = 77;
 
-    let delta = encode(&new, &base).unwrap();
-    let recovered = decode(&delta, &base).unwrap();
+    let delta = encode(&new[..], &base[..]).unwrap();
+    let recovered = decode(&delta[..], &base[..]).unwrap();
 
     assert_eq!(recovered, new);
 }
