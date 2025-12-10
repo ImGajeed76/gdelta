@@ -30,7 +30,6 @@ lz4 = "1.28.1"
 ctrlc = "3.5.1"
 xdelta3 = "0.1.5"
 qbsdiff = "1.4.4"
-bidiff = "1.0.0"
 
 [features]
 default = ["simd"]
