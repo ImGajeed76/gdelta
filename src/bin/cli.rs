@@ -4,7 +4,7 @@
 //!   gdelta encode <base> <new> -o <output> [OPTIONS]
 //!   gdelta decode <base> <delta> -o <output> [OPTIONS]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use owo_colors::OwoColorize;
 use std::fs;
@@ -141,9 +141,7 @@ fn main() {
                 || e.to_string().contains("Insufficient memory")
             {
                 EXIT_OUT_OF_MEMORY
-            } else if e.to_string().contains("cancelled")
-                || e.to_string().contains("Cancelled")
-            {
+            } else if e.to_string().contains("cancelled") || e.to_string().contains("Cancelled") {
                 EXIT_USER_CANCELLED
             } else if e.to_string().contains("encode") || e.to_string().contains("decode") {
                 EXIT_ENCODE_DECODE_FAILED
@@ -206,7 +204,10 @@ fn handle_encode(
     // Read files
     if !quiet {
         let total_steps = if verify { 4 } else { 3 };
-        println!("{} Reading files...", format!("Step 1/{}:", total_steps).bright_cyan());
+        println!(
+            "{} Reading files...",
+            format!("Step 1/{}:", total_steps).bright_cyan()
+        );
     }
 
     let base_data = fs::read(base_path)
@@ -217,7 +218,10 @@ fn handle_encode(
     // Encode
     if !quiet {
         let total_steps = if verify { 4 } else { 3 };
-        println!("{} Encoding delta...", format!("Step 2/{}:", total_steps).bright_cyan());
+        println!(
+            "{} Encoding delta...",
+            format!("Step 2/{}:", total_steps).bright_cyan()
+        );
     }
 
     let start = Instant::now();
@@ -251,7 +255,10 @@ fn handle_encode(
     // Write output
     if !quiet {
         let total_steps = if verify { 4 } else { 3 };
-        println!("{} Writing output...", format!("Step 3/{}:", total_steps).bright_cyan());
+        println!(
+            "{} Writing output...",
+            format!("Step 3/{}:", total_steps).bright_cyan()
+        );
     }
 
     fs::write(output_path, &final_delta)
@@ -482,10 +489,19 @@ fn check_memory(required: u64, skip_prompt: bool, quiet: bool) -> Result<()> {
         eprintln!();
 
         if usage_pct >= 100.0 {
-            eprintln!("   Loading these files will use {:.0}% of available memory.", usage_pct);
-            eprintln!("   {}", "Your system may freeze or crash.".bright_red().bold());
+            eprintln!(
+                "   Loading these files will use {:.0}% of available memory.",
+                usage_pct
+            );
+            eprintln!(
+                "   {}",
+                "Your system may freeze or crash.".bright_red().bold()
+            );
         } else {
-            eprintln!("   Loading these files will use {:.0}% of available memory.", usage_pct);
+            eprintln!(
+                "   Loading these files will use {:.0}% of available memory.",
+                usage_pct
+            );
             eprintln!("   System may slow down temporarily.");
         }
         eprintln!();
@@ -526,8 +542,7 @@ fn compress_lz4(data: &[u8]) -> Result<Vec<u8>> {
         .build(&mut compressed)
         .context("Failed to create LZ4 encoder")?;
 
-    io::copy(&mut &data[..], &mut encoder)
-        .context("Failed to compress with LZ4")?;
+    io::copy(&mut &data[..], &mut encoder).context("Failed to compress with LZ4")?;
 
     let (_output, result) = encoder.finish();
     result.context("Failed to finish LZ4 compression")?;
@@ -568,16 +583,21 @@ fn decompress_if_needed(
 
     if data.starts_with(ZSTD_MAGIC) {
         if !quiet {
-            println!("{} Decompressing (detected Zstd)...", "Step 1.5/3:".bright_cyan());
+            println!(
+                "{} Decompressing (detected Zstd)...",
+                "Step 1.5/3:".bright_cyan()
+            );
         }
         let start = Instant::now();
-        let decompressed = zstd::decode_all(data)
-            .context("Zstd decompression failed")?;
+        let decompressed = zstd::decode_all(data).context("Zstd decompression failed")?;
         let time = start.elapsed();
         Ok((decompressed, Compression::Zstd, Some(time)))
     } else if data.starts_with(LZ4_MAGIC) {
         if !quiet {
-            println!("{} Decompressing (detected LZ4)...", "Step 1.5/3:".bright_cyan());
+            println!(
+                "{} Decompressing (detected LZ4)...",
+                "Step 1.5/3:".bright_cyan()
+            );
         }
         let start = Instant::now();
         let decompressed = decompress_lz4(data)?;
@@ -590,12 +610,10 @@ fn decompress_if_needed(
 }
 
 fn decompress_lz4(data: &[u8]) -> Result<Vec<u8>> {
-    let mut decoder = lz4::Decoder::new(data)
-        .context("Failed to create LZ4 decoder")?;
+    let mut decoder = lz4::Decoder::new(data).context("Failed to create LZ4 decoder")?;
 
     let mut decompressed = Vec::new();
-    io::copy(&mut decoder, &mut decompressed)
-        .context("Failed to decompress LZ4 data")?;
+    io::copy(&mut decoder, &mut decompressed).context("Failed to decompress LZ4 data")?;
 
     Ok(decompressed)
 }

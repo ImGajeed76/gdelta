@@ -4,10 +4,10 @@
 //! Compare: cargo bench --bench simple -- --save-baseline main
 //!          cargo bench --bench simple -- --baseline main
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use gdelta::{decode, encode};
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::fmt::Write;
 use std::hint::black_box;
 
@@ -33,7 +33,8 @@ fn generate_json(size: usize) -> Vec<u8> {
             rng.random_range(0..1000),
             rng.random_range(0..1000),
             rng.random_bool(0.8)
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     data.push_str("]\n");
@@ -53,7 +54,8 @@ fn generate_logs(size: usize) -> Vec<u8> {
             levels[rng.random_range(0..levels.len())],
             rng.random_range(1..20),
             rng.random_range(1000..99999)
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     data.into_bytes()
@@ -70,7 +72,8 @@ fn generate_csv(size: usize) -> Vec<u8> {
             rng.random_range(1000..99999),
             1_700_000_000 + rng.random_range(0..1_000_000),
             rng.random_range(0.0..1000.0)
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     data.into_bytes()
@@ -95,7 +98,9 @@ fn generate_binary(size: usize) -> Vec<u8> {
 fn generate_text(size: usize) -> Vec<u8> {
     let mut data = String::new();
     let mut rng = StdRng::seed_from_u64(42);
-    let words = ["the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog"];
+    let words = [
+        "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
+    ];
 
     while data.len() < size {
         for _ in 0..10 {
@@ -112,7 +117,11 @@ fn generate_text(size: usize) -> Vec<u8> {
 // Change Patterns
 // ============================================================================
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 fn apply_minor_edit(base: &[u8]) -> Vec<u8> {
     let mut new = base.to_vec();
     let mut rng = StdRng::seed_from_u64(123);
@@ -145,7 +154,11 @@ fn bench_encode(c: &mut Criterion) {
         ("json_16kb", generate_json(16 * 1024), apply_minor_edit),
         ("logs_16kb", generate_logs(16 * 1024), apply_minor_edit),
         ("csv_64kb", generate_csv(64 * 1024), apply_minor_edit),
-        ("binary_128kb", generate_binary(128 * 1024), apply_minor_edit),
+        (
+            "binary_128kb",
+            generate_binary(128 * 1024),
+            apply_minor_edit,
+        ),
         ("text_256kb", generate_text(256 * 1024), apply_minor_edit),
     ];
 
@@ -153,11 +166,13 @@ fn bench_encode(c: &mut Criterion) {
         let new = change_fn(&base);
 
         group.throughput(Throughput::Bytes(new.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), &(&base, &new), |b, (base, new)| {
-            b.iter(|| {
-                encode(black_box(new), black_box(base)).unwrap()
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &(&base, &new),
+            |b, (base, new)| {
+                b.iter(|| encode(black_box(new), black_box(base)).unwrap());
+            },
+        );
     }
 
     group.finish();
@@ -170,7 +185,11 @@ fn bench_decode(c: &mut Criterion) {
         ("json_16kb", generate_json(16 * 1024), apply_minor_edit),
         ("logs_16kb", generate_logs(16 * 1024), apply_minor_edit),
         ("csv_64kb", generate_csv(64 * 1024), apply_minor_edit),
-        ("binary_128kb", generate_binary(128 * 1024), apply_minor_edit),
+        (
+            "binary_128kb",
+            generate_binary(128 * 1024),
+            apply_minor_edit,
+        ),
         ("text_256kb", generate_text(256 * 1024), apply_minor_edit),
     ];
 
@@ -179,11 +198,13 @@ fn bench_decode(c: &mut Criterion) {
         let delta = encode(&new, &base).unwrap();
 
         group.throughput(Throughput::Bytes(new.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), &(&base, &delta), |b, (base, delta)| {
-            b.iter(|| {
-                decode(black_box(delta), black_box(base)).unwrap()
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &(&base, &delta),
+            |b, (base, delta)| {
+                b.iter(|| decode(black_box(delta), black_box(base)).unwrap());
+            },
+        );
     }
 
     group.finish();
@@ -196,7 +217,11 @@ fn bench_roundtrip(c: &mut Criterion) {
         ("json_16kb", generate_json(16 * 1024), apply_minor_edit),
         ("logs_16kb", generate_logs(16 * 1024), apply_minor_edit),
         ("csv_64kb", generate_csv(64 * 1024), apply_minor_edit),
-        ("binary_128kb", generate_binary(128 * 1024), apply_minor_edit),
+        (
+            "binary_128kb",
+            generate_binary(128 * 1024),
+            apply_minor_edit,
+        ),
         ("text_256kb", generate_text(256 * 1024), apply_minor_edit),
     ];
 
@@ -204,13 +229,21 @@ fn bench_roundtrip(c: &mut Criterion) {
         let new = change_fn(&base);
 
         group.throughput(Throughput::Bytes(new.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), &(&base, &new), |b, (base, new)| {
-            b.iter(|| {
-                let delta = encode(black_box(new), black_box(base)).unwrap();
-                let reconstructed = decode(black_box(&delta), black_box(base)).unwrap();
-                assert_eq!(reconstructed.len(), new.len(), "Size mismatch in reconstruction");
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &(&base, &new),
+            |b, (base, new)| {
+                b.iter(|| {
+                    let delta = encode(black_box(new), black_box(base)).unwrap();
+                    let reconstructed = decode(black_box(&delta), black_box(base)).unwrap();
+                    assert_eq!(
+                        reconstructed.len(),
+                        new.len(),
+                        "Size mismatch in reconstruction"
+                    );
+                });
+            },
+        );
     }
 
     group.finish();
@@ -221,11 +254,31 @@ fn bench_compression_ratio(c: &mut Criterion) {
     println!("\n=== Compression Ratio Tests ===\n");
 
     let test_cases = vec![
-        ("json_16kb_minor", generate_json(16 * 1024), apply_minor_edit as fn(&[u8]) -> Vec<u8>),
-        ("json_16kb_append", generate_json(16 * 1024), (|b: &[u8]| apply_append(b, 1024)) as fn(&[u8]) -> Vec<u8>),
-        ("logs_64kb_minor", generate_logs(64 * 1024), apply_minor_edit as fn(&[u8]) -> Vec<u8>),
-        ("csv_128kb_minor", generate_csv(128 * 1024), apply_minor_edit as fn(&[u8]) -> Vec<u8>),
-        ("binary_256kb_minor", generate_binary(256 * 1024), apply_minor_edit as fn(&[u8]) -> Vec<u8>),
+        (
+            "json_16kb_minor",
+            generate_json(16 * 1024),
+            apply_minor_edit as fn(&[u8]) -> Vec<u8>,
+        ),
+        (
+            "json_16kb_append",
+            generate_json(16 * 1024),
+            (|b: &[u8]| apply_append(b, 1024)) as fn(&[u8]) -> Vec<u8>,
+        ),
+        (
+            "logs_64kb_minor",
+            generate_logs(64 * 1024),
+            apply_minor_edit as fn(&[u8]) -> Vec<u8>,
+        ),
+        (
+            "csv_128kb_minor",
+            generate_csv(128 * 1024),
+            apply_minor_edit as fn(&[u8]) -> Vec<u8>,
+        ),
+        (
+            "binary_256kb_minor",
+            generate_binary(256 * 1024),
+            apply_minor_edit as fn(&[u8]) -> Vec<u8>,
+        ),
     ];
 
     let mut all_passed = true;
@@ -234,36 +287,37 @@ fn bench_compression_ratio(c: &mut Criterion) {
         let new = change_fn(&base);
 
         match encode(&new, &base) {
-            Ok(delta) => {
-                match decode(&delta, &base) {
-                    Ok(reconstructed) => {
-                        let passed = reconstructed == new;
-                        let ratio = delta.len() as f64 / new.len() as f64;
-                        let savings = (1.0 - ratio) * 100.0;
+            Ok(delta) => match decode(&delta, &base) {
+                Ok(reconstructed) => {
+                    let passed = reconstructed == new;
+                    let ratio = delta.len() as f64 / new.len() as f64;
+                    let savings = (1.0 - ratio) * 100.0;
 
-                        let status = if passed { "✓" } else { "✗" };
-                        all_passed = all_passed && passed;
+                    let status = if passed { "✓" } else { "✗" };
+                    all_passed = all_passed && passed;
 
+                    println!(
+                        "{status} {name:30} | Base: {:>7} | New: {:>7} | Delta: {:>7} | Ratio: {:>5.1}% | Saved: {:>5.1}%",
+                        format_size(base.len()),
+                        format_size(new.len()),
+                        format_size(delta.len()),
+                        ratio * 100.0,
+                        savings
+                    );
+
+                    if !passed {
                         println!(
-                            "{status} {name:30} | Base: {:>7} | New: {:>7} | Delta: {:>7} | Ratio: {:>5.1}% | Saved: {:>5.1}%",
-                            format_size(base.len()),
-                            format_size(new.len()),
-                            format_size(delta.len()),
-                            ratio * 100.0,
-                            savings
+                            "  ERROR: Reconstruction mismatch! Expected {} bytes, got {} bytes",
+                            new.len(),
+                            reconstructed.len()
                         );
-
-                        if !passed {
-                            println!("  ERROR: Reconstruction mismatch! Expected {} bytes, got {} bytes",
-                                     new.len(), reconstructed.len());
-                        }
-                    }
-                    Err(e) => {
-                        println!("✗ {name} | DECODE FAILED: {e}");
-                        all_passed = false;
                     }
                 }
-            }
+                Err(e) => {
+                    println!("✗ {name} | DECODE FAILED: {e}");
+                    all_passed = false;
+                }
+            },
             Err(e) => {
                 println!("✗ {name} | ENCODE FAILED: {e}");
                 all_passed = false;
