@@ -15,19 +15,23 @@ similar data chunks (typically 4KB - 64KB) commonly found in deduplication syste
 
 - Fast delta encoding and decoding with optional SIMD optimization
 - Memory-safe implementation in pure Rust
-- Simple, ergonomic API with CLI tool
+- Simple, ergonomic API with full-featured CLI tool
 - No unsafe code
-- Thoroughly tested
+- Thoroughly tested with comprehensive benchmarking suite
 
 **Performance:**
 
-- **Encoding**: 900-1,000 MiB/s (~1 GB/s) - up to 19% faster with SIMD
-- **Decoding**: 5-9 GB/s (5-8x faster than encoding)
-- Faster than Xdelta, Zdelta, Ddelta, and Edelta
-- Optimized for inter-chunk redundancy removal
-- Best used with general compression (e.g., ZSTD) for additional compression
+- **Encoding**: 370-1,080 MiB/s depending on data characteristics
+    - Small chunks (16KB): up to 1.08 GiB/s
+    - Large data (256KB+): 370-400 MiB/s sustained
+- **Decoding**: 2.0-10.6 GiB/s (5-28x faster than encoding)
+    - Average: 4.1 GiB/s across diverse workloads
+- **Compression**: 63% space saved on average (raw delta)
+    - With zstd: 70% space saved, 258 MiB/s
+    - With lz4: 66% space saved, 350 MiB/s
+- **Fastest in class**: Among open-source delta algorithms, gdelta offers the best speed-to-compression balance
 
-*Benchmarked on 11th Gen Intel® Core™ i7-11370H with similar data chunks*
+*Benchmarked on AMD Ryzen 7 7800X3D with 16 cores (Fedora Linux 42). See [PERFORMANCE.md](PERFORMANCE.md) for detailed analysis.*
 
 ## Installation
 
@@ -37,7 +41,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gdelta = "0.1"
+gdelta = "0.2"
 ```
 
 ### As a CLI Tool
@@ -46,6 +50,15 @@ Install using cargo:
 
 ```bash
 cargo install gdelta --features cli
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/ImGajeed76/gdelta
+cd gdelta
+cargo build --release --features cli
+# Binary at: target/release/gdelta
 ```
 
 ## Usage
@@ -126,7 +139,7 @@ gdelta loads entire files into memory.
 
 ```bash
 # For large files, the tool will prompt:
-⚠ Memory warning: This operation requires ~12.4 GB
+⚠  Memory warning: This operation requires ~12.4 GB
   Available: 8.2 GB free (16 GB total)
   
   Continue? [y/N]: 
@@ -157,15 +170,26 @@ The implementation uses optimized default parameters:
 
 These parameters are tuned for typical deduplication workloads.
 
-## Comparison with Other Delta Algorithms
+## Comparison with Other Algorithms
 
-| Feature     | GDelta | Xdelta    | Zdelta |
-|-------------|--------|-----------|--------|
-| Speed       | Fast   | Medium    | Slow   |
-| Memory      | Low    | Medium    | High   |
-| Compression | Good*  | Excellent | Good   |
+**Performance Comparison** (from comprehensive benchmarks):
 
-*Use with ZSTD/LZ4 for best compression ratio (depending on file size)
+| Algorithm       | Speed    | Compression | Memory | Use Case                      |
+|-----------------|----------|-------------|--------|-------------------------------|
+| **gdelta**      | 397 MB/s | 63%         | Low    | Best all-around speed         |
+| **gdelta+zstd** | 258 MB/s | 70%         | Low    | Balanced speed/compression    |
+| **gdelta+lz4**  | 350 MB/s | 66%         | Low    | Fast with compression         |
+| **xpatch**      | 291 MB/s | 75%         | Low    | Automatic algorithm selection |
+| **qbsdiff**     | 22 MB/s  | 84%         | Medium | Maximum compression           |
+| **xdelta3**     | 45 MB/s  | 81%         | Medium | **Failed verification** ⚠️    |
+
+*See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks and methodology.*
+
+**Key Takeaways:**
+- **Fastest**: gdelta and gdelta+lz4 for high-speed applications
+- **Best Compression**: qbsdiff if speed is not critical
+- **Best Balance**: gdelta+zstd for most production use cases
+- **Decoding**: gdelta is 2-5x faster at decoding than alternatives
 
 ## Use Cases
 
@@ -174,6 +198,8 @@ These parameters are tuned for typical deduplication workloads.
 - **File Synchronization** - Minimize transfer size
 - **Version Control** - Efficient diff storage
 - **Binary Patching** - Software updates and distributions
+- **Cloud Storage** - Reduce storage costs
+- **Database Replication** - Minimize bandwidth
 
 ## Development
 
@@ -183,12 +209,35 @@ These parameters are tuned for typical deduplication workloads.
 # Run unit tests
 cargo test
 
+# Run integration tests
+cargo test --test '*'
+
 # Run CLI test suite
 ./test_gdelta.sh
 
-# Run benchmarks
-cargo bench
+# Run simple benchmarks (quick verification)
+cargo bench --bench simple
+
+# Run comprehensive benchmarks (15-30 min)
+cargo bench --bench comprehensive
+
+# Run comprehensive benchmarks with custom filters
+BENCH_FORMATS=json,csv BENCH_ALGOS=gdelta,xpatch cargo bench --bench comprehensive
 ```
+
+### Benchmark Modes
+
+The comprehensive benchmark supports two modes:
+
+```bash
+# Quick mode (default): smaller sample size, faster
+BENCH_MODE=quick cargo bench --bench comprehensive
+
+# Full mode: larger sample size, more accurate
+BENCH_MODE=full cargo bench --bench comprehensive
+```
+
+Results are saved to `target/benchmark_report_<timestamp>.md` and `.json`.
 
 ## Credits
 
