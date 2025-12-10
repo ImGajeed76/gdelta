@@ -23,17 +23,29 @@ const HEAD_VARINT_MASK: u64 = (1 << HEAD_VARINT_BITS) - 1;
 /// The integer is encoded as a sequence of bytes, where each byte stores
 /// 7 bits of the value. The high bit of each byte indicates whether more
 /// bytes follow (1) or if this is the last byte (0).
-pub fn write_varint(buffer: &mut BufferStream, mut value: u64) {
-    loop {
-        let byte_val = (value & VARINT_MASK) as u8;
-        value >>= VARINT_BITS;
+pub fn write_varint(buffer: &mut BufferStream, value: u64) {
+    // Fast paths for common small values (no loop)
+    if value < 128 {
+        buffer.write_u8(value as u8);
+        return;
+    }
 
-        if value == 0 {
-            // Last byte: high bit is 0
+    if value < 16384 {
+        // 2 bytes
+        buffer.write_u8(((value & 0x7F) | 0x80) as u8);
+        buffer.write_u8((value >> 7) as u8);
+        return;
+    }
+
+    // General case
+    let mut val = value;
+    loop {
+        let byte_val = (val & VARINT_MASK) as u8;
+        val >>= VARINT_BITS;
+        if val == 0 {
             buffer.write_u8(byte_val);
             break;
         }
-        // More bytes follow: high bit is 1
         buffer.write_u8(byte_val | 0x80);
     }
 }
@@ -41,17 +53,28 @@ pub fn write_varint(buffer: &mut BufferStream, mut value: u64) {
 /// Reads a variable-length integer from the buffer.
 #[allow(clippy::cast_lossless)]
 pub fn read_varint(buffer: &mut BufferStream) -> Result<u64> {
-    let mut value = 0u64;
-    let mut shift = 0u8;
+    let byte = buffer.read_u8()?;
+
+    // Fast path: single byte
+    if (byte & 0x80) == 0 {
+        return Ok(byte as u64);
+    }
+
+    // Two bytes
+    let byte2 = buffer.read_u8()?;
+    if (byte2 & 0x80) == 0 {
+        return Ok(((byte & 0x7F) as u64) | ((byte2 as u64) << 7));
+    }
+
+    // General case
+    let mut value = ((byte & 0x7F) as u64) | (((byte2 & 0x7F) as u64) << 7);
+    let mut shift = 14u8;
 
     loop {
         let byte = buffer.read_u8()?;
         let more = (byte & 0x80) != 0;
-        let byte_val = (byte & 0x7F) as u64;
-
-        value |= byte_val << shift;
-        shift += VARINT_BITS;
-
+        value |= ((byte & 0x7F) as u64) << shift;
+        shift += 7;
         if !more {
             break;
         }
