@@ -10,11 +10,26 @@ repository = "https://github.com/ImGajeed76/gdelta"
 documentation = "https://docs.rs/gdelta"
 homepage = "https://github.com/ImGajeed76/gdelta"
 keywords = ["compression", "delta", "deduplication", "encoding", "gdelta"]
-categories = ["compression", "algorithms", "encoding"]
+categories = ["compression", "algorithms", "encoding", "command-line-utilities"]
 readme = "README.md"
+
+[lib]
+name = "gdelta"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gdelta"
+path = "src/bin/cli.rs"
+required-features = ["cli"]
 
 [dependencies]
 wide = { version = "1.0.2", optional = true }
+clap = {version = "4.5.53", features = ["derive", "cargo"], optional = true}
+anyhow = {version = "1.0.100", optional = true}
+owo-colors = {version = "4.2.3", optional = true}
+lz4 = {version = "1.28.1", optional = true}
+zstd = {version = "0.13.3", optional = true}
+sysinfo = {version = "0.37.2", optional = true}
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
@@ -34,6 +49,14 @@ qbsdiff = "1.4.4"
 [features]
 default = ["simd"]
 simd = ["wide"]
+cli = [
+    "dep:clap",
+    "dep:anyhow",
+    "dep:owo-colors",
+    "dep:lz4",
+    "dep:zstd",
+    "dep:sysinfo"
+]
 
 [[bench]]
 name = "comprehensive"
