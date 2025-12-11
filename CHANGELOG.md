@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-11
+
+### Fixed
+- **Critical Bug**: Fixed incorrect suffix offset calculation in trivial case encoding
+  - When `prefix_size + suffix_size >= base_size`, the suffix was incorrectly copied from `new_data` offset instead of `base_data` offset
+  - This caused "Copy offset exceeds base size" errors during decode when new data size > base data size
+  - Affected real-world scenarios with growing files (e.g., appending to source code files)
+  - Now correctly uses `base_size - suffix_size` as the copy offset for suffix in trivial case
+
 ## [0.2.0] - 2025-12-11
 
 ### Added

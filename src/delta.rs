@@ -187,13 +187,14 @@ fn calculate_hash_bits(size: usize) -> u32 {
 /// Encodes the trivial case where prefix + suffix cover the entire base.
 fn encode_trivial_case(
     new_data: &[u8],
-    _base_data: &[u8],
+    base_data: &[u8],
     prefix_size: usize,
     suffix_size: usize,
     instruction_stream: &mut BufferStream,
     data_stream: &mut BufferStream,
 ) {
     let new_size = new_data.len();
+    let base_size = base_data.len();
 
     // Write prefix
     if prefix_size > 0 {
@@ -211,7 +212,7 @@ fn encode_trivial_case(
 
     // Write suffix
     if suffix_size > 0 {
-        let unit = DeltaUnit::copy((new_size - suffix_size) as u64, suffix_size as u64);
+        let unit = DeltaUnit::copy((base_size - suffix_size) as u64, suffix_size as u64);
         write_delta_unit(instruction_stream, &unit);
     }
 }
