@@ -179,21 +179,22 @@ impl DeltaAlgorithm for XpatchAlgorithm {
     }
 }
 
-// xdelta3
+// vcdiff
 
-struct Xdelta3Algorithm;
+struct VCDiffAlgorithm;
 
-impl DeltaAlgorithm for Xdelta3Algorithm {
+impl DeltaAlgorithm for VCDiffAlgorithm {
     fn name(&self) -> &'static str {
-        "xdelta3"
+        "vcdiff"
     }
 
     fn encode(&self, new: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        xdelta3::encode(base, new).ok_or_else(|| "xdelta3 encode failed".into())
+        let format = vcdiff::FORMAT_STANDARD | vcdiff::FORMAT_CHECKSUM;
+        Ok(vcdiff::encode(base, new, format, true))
     }
 
     fn decode(&self, delta: &[u8], base: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        xdelta3::decode(delta, base).ok_or_else(|| "xdelta3 decode failed".into())
+        Ok(vcdiff::decode(base, delta))
     }
 }
 
@@ -2265,7 +2266,7 @@ fn run_benchmarks_with_config(c: &mut Criterion, config: &BenchmarkConfig) {
         Box::new(GdeltaZstdAlgorithm),
         Box::new(GdeltaLz4Algorithm),
         Box::new(XpatchAlgorithm),
-        Box::new(Xdelta3Algorithm),
+        Box::new(VCDiffAlgorithm),
         Box::new(QbsdiffAlgorithm),
         Box::new(ZstdDictAlgorithm),
     ];

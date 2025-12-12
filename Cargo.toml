@@ -39,11 +39,11 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sysinfo = "0.37.2"
 chrono = "0.4.42"
-xpatch = "0.1.0"
+xpatch = "0.2.0"
 zstd = "0.13.3"
 lz4 = "1.28.1"
 ctrlc = "3.5.1"
-xdelta3 = "0.1.5"
+vcdiff = "0.1.0"
 qbsdiff = "1.4.4"
 
 [features]

@@ -21,17 +21,24 @@ similar data chunks (typically 4KB - 64KB) commonly found in deduplication syste
 
 **Performance:**
 
-- **Encoding**: 370-1,080 MiB/s depending on data characteristics
+**Synthetic benchmarks (2,097 tests):**
+
+- **Encoding**: 496 MB/s average throughput
     - Small chunks (16KB): up to 1.08 GiB/s
     - Large data (256KB+): 370-400 MiB/s sustained
-- **Decoding**: 2.0-10.6 GiB/s (5-28x faster than encoding)
-    - Average: 4.1 GiB/s across diverse workloads
-- **Compression**: 63% space saved on average (raw delta)
-    - With zstd: 70% space saved, 258 MiB/s
-    - With lz4: 66% space saved, 350 MiB/s
-- **Fastest in class**: Among open-source delta algorithms, gdelta offers the best speed-to-compression balance
+- **Decoding**: 4.4 GB/s average (9x faster than encoding)
+    - Peak: 10.6 GiB/s on binary data
+- **Compression**: 68% space saved (raw delta)
+    - With zstd: 75% space saved, 305 MB/s
+    - With lz4: 71% space saved, 430 MB/s
 
-*Benchmarked on AMD Ryzen 7 7800X3D with 16 cores (Fedora Linux 42). See [PERFORMANCE.md](PERFORMANCE.md) for detailed analysis.*
+**Real-world git repositories (1.36M comparisons):**
+
+- **mdn/content**: 97.0% space saved, 4µs encode, 0µs decode
+- **tokio**: 94.5% space saved, 5µs encode, 0µs decode
+
+*Benchmarked on AMD Ryzen 7 7800X3D with 16 cores (Fedora Linux 42). See [PERFORMANCE.md](PERFORMANCE.md) for detailed
+analysis including comparisons with xpatch, vcdiff, qbsdiff, and zstd_dict.*
 
 ## Installation
 
@@ -172,34 +179,89 @@ These parameters are tuned for typical deduplication workloads.
 
 ## Comparison with Other Algorithms
 
-**Performance Comparison** (from comprehensive benchmarks):
+### Synthetic Workloads (2,097 tests)
 
 | Algorithm       | Speed    | Compression | Memory | Use Case                      |
 |-----------------|----------|-------------|--------|-------------------------------|
-| **gdelta**      | 397 MB/s | 63%         | Low    | Best all-around speed         |
-| **gdelta+zstd** | 258 MB/s | 70%         | Low    | Balanced speed/compression    |
-| **gdelta+lz4**  | 350 MB/s | 66%         | Low    | Fast with compression         |
-| **xpatch**      | 291 MB/s | 75%         | Low    | Automatic algorithm selection |
+| **gdelta**      | 496 MB/s | 68%         | Low    | Maximum speed                 |
+| **gdelta+lz4**  | 430 MB/s | 71%         | Low    | Fast with compression         |
+| **gdelta+zstd** | 305 MB/s | 75%         | Low    | Balanced speed/compression    |
+| **xpatch**      | 306 MB/s | 75%         | Low    | Automatic algorithm selection |
+| **vcdiff**      | 94 MB/s  | 64%         | Medium | Standard delta format         |
 | **qbsdiff**     | 22 MB/s  | 84%         | Medium | Maximum compression           |
-| **xdelta3**     | 45 MB/s  | 81%         | Medium | **Failed verification** ⚠️    |
+| **zstd_dict**   | 14 MB/s  | 55%         | Medium | Dictionary-based compression  |
 
-*See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks and methodology.*
+### Git Repository Workloads (1.36M comparisons)
 
-**Key Takeaways:**
-- **Fastest**: gdelta and gdelta+lz4 for high-speed applications
-- **Best Compression**: qbsdiff if speed is not critical
-- **Best Balance**: gdelta+zstd for most production use cases
-- **Decoding**: gdelta is 2-5x faster at decoding than alternatives
+**mdn/content repository (306K comparisons):**
+
+| Algorithm     | Compression | Encode Time | Notes            |
+|---------------|-------------|-------------|------------------|
+| xpatch (tags) | 97.5% saved | 319 µs      | Best compression |
+| xpatch (seq)  | 97.5% saved | 14 µs       | Fast alternative |
+| **gdelta**    | 97.0% saved | 4 µs        | **Fastest**      |
+| vcdiff        | 95.6% saved | 49 µs       | Standard format  |
+
+**tokio repository (33K comparisons):**
+
+| Algorithm     | Compression | Encode Time | Notes            |
+|---------------|-------------|-------------|------------------|
+| xpatch (tags) | 97.9% saved | 306 µs      | Best compression |
+| xpatch (seq)  | 95.6% saved | 24 µs       | Balanced         |
+| **gdelta**    | 94.5% saved | 5 µs        | **Fastest**      |
+| vcdiff        | 93.1% saved | 28 µs       | Standard format  |
+
+*Git benchmark data from [xpatch test results](https://github.com/ImGajeed76/xpatch/tree/master/test_results).
+See [PERFORMANCE.md](PERFORMANCE.md) for detailed analysis.*
+
+### Key Observations
+
+**Synthetic benchmarks:**
+
+- qbsdiff: best compression (84%), slowest speed (22 MB/s)
+- gdelta: fastest speed (496 MB/s), competitive compression (68%)
+- xpatch/gdelta+zstd: balanced (75% compression, 305 MB/s)
+- Algorithm choice impacts compression by 29 percentage points
+
+**Git repositories:**
+
+- All algorithms achieve 93-98% compression on real file evolution
+- xpatch with tag optimization: best compression (97.5-97.9%)
+- gdelta: fastest (4-5µs), competitive compression (94.5-97.0%)
+- Differences measured in microseconds, all are fast
+
+**Workload matters:** Performance characteristics vary significantly between synthetic edits and real file evolution
+patterns.
 
 ## Use Cases
 
-- **Deduplication Systems** - Compress similar chunks
-- **Backup Software** - Incremental backups
-- **File Synchronization** - Minimize transfer size
-- **Version Control** - Efficient diff storage
-- **Binary Patching** - Software updates and distributions
-- **Cloud Storage** - Reduce storage costs
-- **Database Replication** - Minimize bandwidth
+**High-Speed Applications:**
+
+- Deduplication systems: gdelta (496 MB/s)
+- Real-time processing: gdelta (4.4 GB/s decode)
+- Database replication: gdelta or gdelta+lz4
+
+**Version Control Systems:**
+
+- Best compression: xpatch with tags (97.5-97.9% on real repos)
+- Fastest: gdelta (4-5µs per operation)
+- Balanced: xpatch sequential mode or gdelta+lz4
+
+**Backup & Storage:**
+
+- Space-critical: qbsdiff (84% saved)
+- Balanced: gdelta+zstd (75% saved, 305 MB/s)
+- Fast backups: gdelta or gdelta+lz4
+
+**Network Synchronization:**
+
+- Low bandwidth: qbsdiff or xpatch
+- Low latency: gdelta (4.4 GB/s decode)
+- Balanced: gdelta+zstd
+
+**Standards Compliance:**
+
+- RFC 3284 (VCDIFF): vcdiff implementation
 
 ## Development
 

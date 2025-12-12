@@ -1,17 +1,18 @@
 # Performance Analysis
 
 This document provides comprehensive performance analysis of gdelta and comparison with other delta compression
-algorithms.
+algorithms across synthetic benchmarks and real-world git repository workloads.
 
 ## Table of Contents
 
 1. [Hardware & Methodology](#hardware--methodology)
 2. [Executive Summary](#executive-summary)
-3. [gdelta Performance Characteristics](#gdelta-performance-characteristics)
-4. [Algorithm Comparison](#algorithm-comparison)
-5. [Use Case Recommendations](#use-case-recommendations)
-6. [Scaling Behavior](#scaling-behavior)
-7. [Running Your Own Benchmarks](#running-your-own-benchmarks)
+3. [Synthetic Benchmark Results](#synthetic-benchmark-results)
+4. [Real-World Git Repository Performance](#real-world-git-repository-performance)
+5. [Algorithm Comparison](#algorithm-comparison)
+6. [Use Case Recommendations](#use-case-recommendations)
+7. [Scaling Behavior](#scaling-behavior)
+8. [Running Your Own Benchmarks](#running-your-own-benchmarks)
 
 ---
 
@@ -26,453 +27,559 @@ OS:     Fedora Linux 42
 Rust:   1.83+ with default optimizations
 ```
 
-### Benchmark Methodology
+### Benchmark Methodologies
 
-**Two benchmark suites:**
+**1. Synthetic Benchmarks** (`cargo bench --bench comprehensive`)
 
-1. **Simple Benchmark** (`cargo bench --bench simple`)
-    - Quick correctness and performance verification
-    - 5 realistic data types (JSON, logs, CSV, binary, text)
-    - Sizes: 16KB to 256KB
+- 15 data formats × 7 change patterns × 3 sizes = 315 test cases per algorithm
+- Controlled modifications: deletes, appends, minor/moderate/major edits
+- Metrics: compression ratio, encode/decode speed, verification
+- Total: 2,097 tests across 7 algorithms
 
-2. **Comprehensive Benchmark** (`cargo bench --bench comprehensive`)
-    - Multi-algorithm comparison (7 algorithms tested)
-    - 15 data formats × 7 change patterns × 3 sizes = 315 test cases per algorithm
-    - Metrics: compression ratio, encode/decode speed, verification
+**2. Real-World Git Repository Analysis** (via xpatch)
+
+- Actual file evolution across git history
+- Tests every file version against previous versions
+- mdn/content: 30,719 files, 1,225,740 comparisons
+- tokio: 1,805 files, 133,728 comparisons
+- Measures real version control workload performance
+
+**Data sources:**
+
+- Synthetic benchmarks: gdelta comprehensive suite
+- Git benchmarks: xpatch test
+  results ([mdn/content](https://github.com/ImGajeed76/xpatch/blob/master/test_results/report_20251211_204655.md), [tokio](https://github.com/ImGajeed76/xpatch/blob/master/test_results/report_20251211_205512.md))
 
 ### Tested Algorithms
 
 | Algorithm       | Description                                      | Version |
 |-----------------|--------------------------------------------------|---------|
-| **gdelta**      | Pure delta (this implementation)                 | 0.2.0   |
-| **gdelta_zstd** | gdelta + zstd compression (level 3)              | 0.2.0   |
-| **gdelta_lz4**  | gdelta + lz4 compression                         | 0.2.0   |
-| **xpatch**      | Multi-algorithm wrapper (uses gdelta internally) | 0.1.x   |
+| **gdelta**      | Pure delta (this implementation)                 | 0.2.1   |
+| **gdelta_zstd** | gdelta + zstd compression (level 3)              | 0.2.1   |
+| **gdelta_lz4**  | gdelta + lz4 compression                         | 0.2.1   |
+| **xpatch**      | Multi-algorithm wrapper (uses gdelta internally) | 0.2.0   |
+| **vcdiff**      | Standard VCDIFF format implementation            | 0.1.0   |
 | **qbsdiff**     | Industry-standard bsdiff                         | 1.4.4   |
-| **xdelta3**     | Popular delta compression                        | 0.1.5   |
 | **zstd_dict**   | Zstd with dictionary training                    | 0.13.3  |
 
 ---
 
 ## Executive Summary
 
-### Performance at a Glance
+### Synthetic Benchmark Results (2,097 tests)
 
-| Algorithm       | Encode Speed | Decode Speed | Compression  |
-|-----------------|--------------|--------------|--------------|
-| gdelta          | 397 MB/s     | 4.1 GB/s     | 63% saved    |
-| gdelta_lz4      | 350 MB/s     | 3.6 GB/s     | 66% saved    |
-| gdelta_zstd     | 258 MB/s     | 2.0 GB/s     | 70% saved    |
-| xpatch          | 291 MB/s     | 2.3 GB/s     | 75% saved    |
-| qbsdiff         |  22 MB/s     | 114 MB/s     | 84% saved    |
-| xdelta3*        |  45 MB/s     | N/A          | 81% saved    |
-| zstd_dict       |  23 MB/s     |  27 MB/s     | 55% saved    |
+| Algorithm   | Encode Speed | Decode Speed | Compression | Verification |
+|-------------|--------------|--------------|-------------|--------------|
+| gdelta      | 496 MB/s     | 4.4 GB/s     | 68% saved   | 100% ✅       |
+| gdelta_lz4  | 430 MB/s     | 3.9 GB/s     | 71% saved   | 100% ✅       |
+| gdelta_zstd | 305 MB/s     | 2.2 GB/s     | 75% saved   | 100% ✅       |
+| xpatch      | 306 MB/s     | 2.3 GB/s     | 75% saved   | 100% ✅       |
+| vcdiff      | 94 MB/s      | 2.6 GB/s     | 64% saved   | 100% ✅       |
+| qbsdiff     | 22 MB/s      | 111 MB/s     | 84% saved   | 100% ✅       |
+| zstd_dict   | 14 MB/s      | 16 MB/s      | 55% saved   | 100% ✅       |
 
-\* xdelta3 failed verification tests (produced corrupted output)
+### Git Repository Results (1.36M comparisons)
 
+**mdn/content (306,435 comparisons):**
+
+| Algorithm     | Compression | Encode Time | Decode Time |
+|---------------|-------------|-------------|-------------|
+| xpatch (tags) | 97.5% saved | 319 µs      | 1 µs        |
+| xpatch (seq)  | 97.5% saved | 14 µs       | 1 µs        |
+| gdelta        | 97.0% saved | 4 µs        | 0 µs        |
+| vcdiff        | 95.6% saved | 49 µs       | 7 µs        |
+
+**tokio (33,432 comparisons):**
+
+| Algorithm     | Compression | Encode Time | Decode Time |
+|---------------|-------------|-------------|-------------|
+| xpatch (tags) | 97.9% saved | 306 µs      | 0 µs        |
+| xpatch (seq)  | 95.6% saved | 24 µs       | 1 µs        |
+| gdelta        | 94.5% saved | 5 µs        | 0 µs        |
+| vcdiff        | 93.1% saved | 28 µs       | 4 µs        |
 
 ### Key Findings
 
-✅ **gdelta is the fastest verified algorithm**
+**Synthetic workloads show:**
 
-- 18x faster encoding than qbsdiff
-- 10x faster decoding than alternatives
-- Best choice for high-throughput applications
+- gdelta: fastest encode/decode, competitive compression
+- qbsdiff: best compression, slowest speed
+- xpatch: balanced performance matching gdelta+zstd
+- vcdiff: moderate speed, lowest compression
 
-✅ **gdelta+lz4 offers best speed with compression**
+**Real-world git workloads show:**
 
-- 16x faster than qbsdiff
-- Only 3% compression penalty vs raw gdelta
-- Ideal for real-time compression needs
+- xpatch (tags mode): best compression by significant margin
+- gdelta: fastest speed, competitive compression
+- xpatch (sequential): balanced speed and compression
+- vcdiff: moderate performance across metrics
 
-✅ **gdelta+zstd balances speed and compression**
-
-- 11x faster than qbsdiff at encoding
-- 7% better compression than raw gdelta
-- Recommended for production use
-
-⚠️ **qbsdiff has best compression but slowest**
-
-- 84% space saved (best in class)
-- Suitable only when time is not critical
-
-❌ **xdelta3 failed verification**
-
-- Produced corrupted output in comprehensive tests
-- Not recommended for production use
+**Workload matters:** Algorithm performance varies significantly between synthetic edits and real file evolution
+patterns.
 
 ---
 
-## gdelta Performance Characteristics
+## Synthetic Benchmark Results
 
-### Encoding Performance by Data Size
+### Performance Summary
 
-**From Simple Benchmark:**
-
-| Data Type | Size  | Throughput | Time    |
-|-----------|-------|------------|---------|
-| JSON      | 16KB  | 1.08 GiB/s | 14.1 µs |
-| Logs      | 16KB  | 1.04 GiB/s | 14.7 µs |
-| CSV       | 64KB  | 1.02 GiB/s | 59.7 µs |
-| Binary    | 128KB | 1.04 GiB/s | 117 µs  |
-| Text      | 256KB | 371 MiB/s  | 673 µs  |
-
-**Key Observations:**
-
-- **Peak performance** on small chunks (16-64KB): >1 GiB/s
-- **Sustained performance** on larger data: 370-400 MiB/s
-- **Optimal chunk size**: 16KB-128KB for maximum throughput
-
-### Decoding Performance by Data Size
-
-| Data Type | Size  | Throughput | Time    |
-|-----------|-------|------------|---------|
-| JSON      | 16KB  | 6.7 GiB/s  | 2.3 µs  |
-| Logs      | 16KB  | 7.3 GiB/s  | 2.1 µs  |
-| CSV       | 64KB  | 8.4 GiB/s  | 7.2 µs  |
-| Binary    | 128KB | 10.6 GiB/s | 11.4 µs |
-| Text      | 256KB | 2.0 GiB/s  | 119 µs  |
-
-**Key Observations:**
-
-- **5-10x faster** than encoding
-- **Peak performance**: 10.6 GiB/s on binary data
-- **Average**: 4.1 GiB/s across all workloads
-- Decoding speed makes gdelta ideal for read-heavy workloads
-
-### Compression Efficiency
-
-**By Change Pattern** (from comprehensive benchmark):
-
-| Change Type         | Compression Ratio | Space Saved |
-|---------------------|-------------------|-------------|
-| Delete              | 0.000             | 100%        |
-| Append              | 0.021             | 98%         |
-| Minor edit (1%)     | 0.198             | 80%         |
-| Moderate edit (15%) | 0.677             | 32%         |
-| Major rewrite (50%) | 0.978             | 2%          |
-
-**Key Observations:**
-
-- **Best case**: Deletions and appends (near 100% saved)
-- **Typical case**: Minor edits result in 80% space savings
-- **Worst case**: Major rewrites provide minimal benefit
-
-### Correctness Validation
-
-✅ **All tests passed** (270/270 in comprehensive benchmark)
+**Encoding Throughput:**
 
 ```
-Test Results from Simple Benchmark:
-✓ json_16kb_minor    | 90.3% saved | Verified
-✓ json_16kb_append   | 94.1% saved | Verified  
-✓ logs_64kb_minor    | 89.3% saved | Verified
-✓ csv_128kb_minor    | 90.3% saved | Verified
-✓ binary_256kb_minor | 92.3% saved | Verified
+gdelta       ████████████████████ 496 MB/s
+gdelta_lz4   ██████████████████   430 MB/s
+xpatch       ███████████████      306 MB/s  
+gdelta_zstd  ███████████████      305 MB/s
+vcdiff       █████                 94 MB/s
+qbsdiff      ████                  22 MB/s
+zstd_dict    ███                   14 MB/s
 ```
+
+**Decoding Throughput:**
+
+```
+gdelta       ████████████████████ 4.4 GB/s
+gdelta_lz4   ███████████████████  3.9 GB/s
+vcdiff       █████████████        2.6 GB/s
+xpatch       ████████████         2.3 GB/s
+gdelta_zstd  ███████████          2.2 GB/s
+qbsdiff      ███                  111 MB/s
+zstd_dict    █                     16 MB/s
+```
+
+**Compression Ratio:**
+
+```
+qbsdiff      ████████████████████ 84.4%
+xpatch       ███████████████      74.6%
+gdelta_zstd  ███████████████      74.6%
+gdelta_lz4   ██████████████       70.6%
+gdelta       █████████████        68.4%
+vcdiff       ████████████         64.2%
+zstd_dict    ███████████          55.0%
+```
+
+### Real-World Delta Sizes (2MB file, synthetic edits)
+
+| Algorithm   | Delta Size | Saved | Speed Trade-off       |
+|-------------|------------|-------|-----------------------|
+| qbsdiff     | 312 KB     | 85%   | 22 MB/s (baseline)    |
+| xpatch      | 544 KB     | 74%   | 14x faster (306 MB/s) |
+| gdelta_zstd | 544 KB     | 74%   | 14x faster (305 MB/s) |
+| gdelta_lz4  | 647 KB     | 69%   | 20x faster (430 MB/s) |
+| gdelta      | 717 KB     | 66%   | 23x faster (496 MB/s) |
+| vcdiff      | 774 KB     | 63%   | 4x faster (94 MB/s)   |
+| zstd_dict   | 1039 KB    | 50%   | 0.6x speed (14 MB/s)  |
+
+### Performance by Change Pattern
+
+**Deletions (best case):**
+
+- All algorithms: 98-100% saved
+- gdelta: fastest at 36,651 efficiency score
+- xpatch: competitive with automatic optimization
+
+**Appends (excellent case):**
+
+- All algorithms: 97-98% saved
+- gdelta: 36,651 efficiency score
+- xpatch: 4,913 efficiency score with automatic base selection
+
+**Minor edits (typical case):**
+
+- qbsdiff: 95% saved, slow (27ms)
+- xpatch: 83% saved, fast (3ms)
+- gdelta: 80% saved, fastest (2.3ms)
+
+**Major rewrites (worst case):**
+
+- qbsdiff: 38% saved
+- All others: 0-15% saved
+- Speed advantage of fast algorithms increases
+
+---
+
+## Real-World Git Repository Performance
+
+### mdn/content Repository (30,719 files)
+
+**Compression efficiency:**
+
+- xpatch (tags): 97.5% saved (best)
+- xpatch (sequential): 97.5% saved
+- gdelta: 97.0% saved
+- vcdiff: 95.6% saved (lowest)
+
+**Speed characteristics:**
+
+- gdelta: 4µs encode, 0µs decode (fastest)
+- xpatch (sequential): 14µs encode, 1µs decode
+- vcdiff: 49µs encode, 7µs decode
+- xpatch (tags): 319µs encode, 1µs decode
+
+**Tag optimization impact:**
+
+- Average: 3.8% better compression with tags
+- Median: 8.8% better compression with tags
+- Average base distance: 1.1 commits back
+
+### tokio Repository (1,805 files)
+
+**Compression efficiency:**
+
+- xpatch (tags): 97.9% saved (best, significant margin)
+- xpatch (sequential): 95.6% saved
+- gdelta: 94.5% saved
+- vcdiff: 93.1% saved (lowest)
+
+**Speed characteristics:**
+
+- gdelta: 5µs encode, 0µs decode (fastest)
+- xpatch (sequential): 24µs encode, 1µs decode
+- vcdiff: 28µs encode, 4µs decode
+- xpatch (tags): 306µs encode, 0µs decode
+
+**Tag optimization impact:**
+
+- Average: 53.3% better compression with tags
+- Median: 88.7% better compression with tags
+- Average base distance: 1.9 commits back
+
+### Git Workload Analysis
+
+**Key observations:**
+
+1. **xpatch tag optimization highly effective** on actual file evolution:
+    - mdn/content: 3.8% average improvement, 8.8% median
+    - tokio: 53.3% average improvement, 88.7% median
+    - Benefit varies by repository structure
+
+2. **Compression ratios much better** than synthetic benchmarks:
+    - Git: 93-98% saved across all algorithms
+    - Synthetic: 55-84% saved across all algorithms
+    - Real file changes are more incremental
+
+3. **Speed differences compress at small scales:**
+    - All algorithms complete in microseconds
+    - gdelta maintains speed advantage (4-5µs)
+    - xpatch tag overhead (300µs) still fast in absolute terms
+
+4. **Median performance varies from average:**
+    - Median deltas often smaller than average
+    - Most changes are small, some are large
+    - Algorithm choice impacts outliers differently
 
 ---
 
 ## Algorithm Comparison
 
-### Speed Comparison
+### Efficiency Scores
 
-**Encoding Throughput (Higher is Better):**
+**Formula:** (1 - Compression Ratio) × 1000 / Encode Time (ms)
 
-```
-gdelta       ████████████████████ 397 MB/s
-gdelta_lz4   ██████████████████   350 MB/s
-xpatch       ███████████████      291 MB/s  
-gdelta_zstd  █████████████        258 MB/s
-xdelta3*     ████████             45 MB/s
-zstd_dict    ████                 23 MB/s
-qbsdiff      ████                 22 MB/s
+Higher score = better compression per unit time
 
-* Failed verification tests
-```
+**Synthetic benchmarks:**
 
-**Decoding Throughput (Higher is Better):**
+| Algorithm   | Efficiency | Category            |
+|-------------|------------|---------------------|
+| gdelta      | 419        | Speed-optimized     |
+| gdelta_lz4  | 376        | Speed-optimized     |
+| xpatch      | 282        | Balanced            |
+| gdelta_zstd | 281        | Balanced            |
+| vcdiff      | 74         | Balanced            |
+| qbsdiff     | 23         | Compression-focused |
+| zstd_dict   | 6          | Compression-focused |
 
-```
-gdelta       ████████████████████ 4.1 GB/s
-gdelta_lz4   ██████████████████   3.6 GB/s
-xpatch       ████████████         2.3 GB/s
-gdelta_zstd  ██████████           2.0 GB/s
-qbsdiff      ███                  114 MB/s
-zstd_dict    █                    27 MB/s
-```
+**Git repository (mdn/content):**
 
-### Compression Comparison
+| Algorithm     | Efficiency | Category            |
+|---------------|------------|---------------------|
+| gdelta        | 242,500    | Speed-optimized     |
+| xpatch (seq)  | 69,643     | Speed-optimized     |
+| vcdiff        | 19,510     | Balanced            |
+| xpatch (tags) | 3,056      | Compression-focused |
 
-**Space Saved (Higher is Better):**
+### Verification Results
 
-```
-qbsdiff      ████████████████████ 84.4%
-xdelta3*     ██████████████████   81.3%
-xpatch       ███████████████      74.6%
-gdelta_zstd  ██████████████       70.5%
-gdelta_lz4   █████████████        65.9%
-gdelta       █████████████        63.3%
-zstd_dict    ███████████          55.0%
+**All algorithms:** 100% verification success across all test suites
 
-* Failed verification tests
-```
+- Synthetic: 2,097/2,097 tests passed
+- mdn/content: 306,435/306,435 comparisons verified
+- tokio: 33,432/33,432 comparisons verified
 
-### Real-World Delta Sizes
-
-For a **2MB file with typical edits**:
-
-| Algorithm   | Delta Size | Saved | Relative to Best |
-|-------------|------------|-------|------------------|
-| qbsdiff     | 312 KB     | 85%   | Best             |
-| xpatch      | 544 KB     | 74%   | +231 KB          |
-| gdelta_zstd | 634 KB     | 70%   | +322 KB          |
-| gdelta_lz4  | 754 KB     | 64%   | +442 KB          |
-| gdelta      | 836 KB     | 60%   | +524 KB          |
-| zstd_dict   | 1039 KB    | 50%   | +727 KB          |
-
-**Analysis:**
-
-- gdelta produces deltas ~2x larger than qbsdiff
-- But gdelta is ~18x faster at encoding
-- For 2MB → 634KB (gdelta_zstd): saves 322ms compared to qbsdiff
-
-### Performance Trade-offs
-
-**Efficiency Score = (Space Saved) / (Encode Time)**
-
-| Algorithm   | Efficiency Score | Category            |
-|-------------|------------------|---------------------|
-| gdelta      | 310              | ⚡ Best for Speed    |
-| gdelta_lz4  | 284              | ⚡ Fast + Compressed |
-| xpatch      | 269              | ⚡ Balanced          |
-| gdelta_zstd | 225              | ⚖️ Balanced         |
-| qbsdiff     | 23               | 🎯 Best Compression |
-| zstd_dict   | 11               | 🐌 Slow             |
+**Total verified operations:** 1,567,764
 
 ---
 
 ## Use Case Recommendations
 
-### By Priority
+### By Workload Type
 
-#### 🚀 **Maximum Speed Required**
+**Version Control Systems (git, svn, etc.):**
 
-**Use: `gdelta` (raw)**
+- **Best compression:** xpatch with tag optimization
+    - 97.5-97.9% saved on real repos
+    - Tag mode: best for complex histories with branches
+    - Sequential mode: faster, competitive compression
+- **Best speed:** gdelta
+    - 94.5-97.0% saved on real repos
+    - Sub-10µs latency
+    - Simple, predictable performance
 
-- Encoding: 397 MB/s
-- Decoding: 4.1 GB/s
-- Best for: Real-time processing, high-throughput pipelines
+**Backup & Deduplication:**
 
-```bash
-# Library
-let delta = gdelta::encode(new, base)?;
+- **Fast operation:** gdelta (496 MB/s) or gdelta_lz4 (430 MB/s)
+- **Balanced:** xpatch or gdelta_zstd (305 MB/s, 75% saved)
+- **Maximum compression:** qbsdiff (84% saved)
 
-# CLI
-gdelta encode old.bin new.bin -o patch.delta
-```
+**Network Synchronization:**
 
-#### ⚡ **Fast with Compression**
+- **Low bandwidth:** qbsdiff (84% saved) or xpatch (75% saved)
+- **Low latency:** gdelta (4.4 GB/s decode) or gdelta_lz4 (3.9 GB/s decode)
+- **Balanced:** gdelta_zstd (75% saved, 2.2 GB/s decode)
 
-**Use: `gdelta + lz4`**
+**Real-time Processing:**
 
-- Encoding: 350 MB/s (12% slower)
-- Compression: 66% saved (3% better)
-- Best for: Network transfers, storage systems
+- **Sub-millisecond:** gdelta (496 MB/s encode, 4.4 GB/s decode)
+- **Near-realtime:** gdelta_lz4 (430 MB/s encode, 3.9 GB/s decode)
 
-```bash
-# CLI
-gdelta encode old.bin new.bin -o patch.delta -c lz4
-```
+**Archive Storage:**
 
-#### ⚖️ **Balanced Speed & Compression**
+- **Space-critical:** qbsdiff (84% saved)
+- **Retrieval matters:** xpatch (75% saved, 2.3 GB/s decode)
 
-**Use: `gdelta + zstd`**
+**Standards Compliance:**
 
-- Encoding: 258 MB/s (35% slower than raw)
-- Compression: 70% saved (7% better than raw)
-- Best for: **Most production use cases**
-
-```bash
-# CLI
-gdelta encode old.bin new.bin -o patch.delta -c zstd
-```
-
-#### 🎯 **Maximum Compression**
-
-**Use: `qbsdiff`**
-
-- Encoding: 22 MB/s (18x slower than gdelta)
-- Compression: 84% saved (21% better than gdelta)
-- Best for: Offline archives, bandwidth-critical applications
-
-### By Application Type
-
-| Application              | Recommended | Why                              |
-|--------------------------|-------------|----------------------------------|
-| **Backup Systems**       | gdelta_zstd | Balance of speed and space       |
-| **Version Control**      | gdelta_lz4  | Fast commits, decent compression |
-| **Deduplication**        | gdelta      | Maximum throughput               |
-| **Network Sync**         | gdelta_zstd | Minimize transfer time + size    |
-| **Archive Storage**      | qbsdiff     | Time not critical, space is      |
-| **Real-time Processing** | gdelta      | Sub-millisecond latency          |
-| **Database Replication** | gdelta_lz4  | Fast, low latency                |
-| **Software Updates**     | gdelta_zstd | Users wait for download          |
+- **RFC 3284:** vcdiff (64% saved, 94 MB/s encode)
 
 ### By Data Characteristics
 
-**Small Chunks (< 64KB):**
+**Highly similar versions (typical git changes):**
 
-- Use `gdelta` raw - achieves >1 GiB/s
-- Compression overhead not worth it
+- All algorithms perform excellently (93-98% saved)
+- Speed difference becomes primary factor
+- xpatch tag optimization provides marginal gains
 
-**Medium Chunks (64KB - 512KB):**
+**Diverse changes (synthetic edits):**
 
-- Use `gdelta_lz4` - best speed/compression balance
+- Compression varies widely (55-84% saved)
+- Algorithm choice has larger impact
+- qbsdiff provides significantly better compression
 
-**Large Files (> 512KB):**
+**Small files/chunks (< 64KB):**
 
-- Use `gdelta_zstd` - compression savings significant
+- gdelta: >1 GiB/s throughput
+- Compression overhead minimal
 
-**Highly Similar Data:**
+**Large files (> 512KB):**
 
-- Use `gdelta` raw - already small deltas
+- Compression benefits increase
+- gdelta_zstd or xpatch recommended
 
-**Diverse Changes:**
+**Structured text (code, configs, JSON):**
 
-- Use `gdelta_zstd` - compression helps more
+- All delta algorithms work well
+- 68-84% saved (synthetic)
+- 94-98% saved (real evolution)
+
+**Binary data:**
+
+- qbsdiff: 84% saved
+- gdelta: 66% saved
+- vcdiff: 64% saved
+
+### Decision Matrix
+
+| Priority     | Synthetic Workload | Git Repository           |
+|--------------|--------------------|--------------------------|
+| Speed        | gdelta (496 MB/s)  | gdelta (4µs)             |
+| Compression  | qbsdiff (84%)      | xpatch_tags (97.9%)      |
+| Balanced     | xpatch (75%, 306)  | xpatch_seq (95.6%, 24µs) |
+| Standards    | vcdiff (RFC 3284)  | vcdiff (RFC 3284)        |
+| Decode Speed | gdelta (4.4 GB/s)  | gdelta (0µs)             |
 
 ---
 
 ## Scaling Behavior
 
-### Compression Ratio vs. Size
+### Compression Ratio vs. File Size (Synthetic)
 
-**gdelta maintains consistent compression across sizes:**
-
-| Size        | 16KB  | 256KB | 2MB   | Trend            |
+| Algorithm   | 16KB  | 256KB | 2MB   | Trend            |
 |-------------|-------|-------|-------|------------------|
-| gdelta      | 0.356 | 0.366 | 0.378 | ➡️ Stable (+6%)  |
-| gdelta_lz4  | 0.333 | 0.339 | 0.351 | ➡️ Stable (+5%)  |
-| gdelta_zstd | 0.295 | 0.293 | 0.297 | ➡️ Stable (+1%)  |
+| gdelta      | 0.310 | 0.314 | 0.324 | ➡️ Stable (+5%)  |
+| gdelta_lz4  | 0.290 | 0.291 | 0.301 | ➡️ Stable (+4%)  |
+| gdelta_zstd | 0.258 | 0.251 | 0.255 | ➡️ Stable (-1%)  |
+| xpatch      | 0.257 | 0.251 | 0.255 | ➡️ Stable (-1%)  |
+| vcdiff      | 0.367 | 0.353 | 0.352 | ➡️ Stable (-4%)  |
 | qbsdiff     | 0.180 | 0.145 | 0.143 | ⬇️ Better (-21%) |
+| zstd_dict   | N/A   | 0.402 | 0.497 | ⬆️ Worse (+24%)  |
 
-**Insight:** gdelta's ratio is predictable across sizes, while qbsdiff improves on larger data.
+### Throughput vs. Chunk Size (gdelta)
 
-### Throughput vs. Size
+| Size  | Encode      | Decode     |
+|-------|-------------|------------|
+| 16KB  | 1,080 MiB/s | 6.7 GiB/s  |
+| 64KB  | 1,020 MiB/s | 8.4 GiB/s  |
+| 128KB | 1,040 MiB/s | 10.6 GiB/s |
+| 256KB | 371 MiB/s   | 2.0 GiB/s  |
 
-**gdelta throughput is highest on small chunks:**
+**Optimal:** 16-128KB chunks for peak throughput
 
-| Size  | Throughput  |
-|-------|-------------|
-| 16KB  | 1,080 MiB/s |
-| 64KB  | 1,020 MiB/s |
-| 128KB | 1,040 MiB/s |
-| 256KB | 371 MiB/s   |
+### Performance by Data Format (Synthetic)
 
-**Insight:** Optimal for chunk-based processing (16-128KB chunks).
+Best compression ratios by format:
 
-### Performance by Data Type
+| Format      | Best Algorithm | Ratio | Second Best | Ratio |
+|-------------|----------------|-------|-------------|-------|
+| SQL dumps   | qbsdiff        | 0.141 | xpatch      | 0.221 |
+| XML         | qbsdiff        | 0.142 | xpatch      | 0.229 |
+| Logs        | qbsdiff        | 0.141 | xpatch      | 0.238 |
+| JSON        | qbsdiff        | 0.141 | xpatch      | 0.224 |
+| CSV         | qbsdiff        | 0.141 | xpatch      | 0.232 |
+| HTML        | qbsdiff        | 0.142 | xpatch      | 0.241 |
+| Source code | qbsdiff        | 0.143 | xpatch      | 0.216 |
+| Compressed  | qbsdiff        | 0.199 | xpatch      | 0.326 |
+| Binary      | qbsdiff        | 0.199 | xpatch      | 0.325 |
 
-**Some data types compress better than others:**
-
-| Data Type         | Compression | Why                 |
-|-------------------|-------------|---------------------|
-| XML/HTML          | 0.326       | High redundancy     |
-| JSON              | 0.315       | Structured patterns |
-| SQL dumps         | 0.306       | Repeated schema     |
-| Logs              | 0.326       | Timestamp patterns  |
-| Source code       | 0.329       | Similar structures  |
-| Binary/compressed | 0.467       | Low redundancy      |
-
-**Insight:** gdelta works best on structured, redundant data.
+**Pattern:** qbsdiff leads compression, xpatch consistently second, gdelta variants competitive on speed.
 
 ---
 
 ## Running Your Own Benchmarks
 
-### Quick Verification
+### Synthetic Benchmarks
 
 ```bash
-# Run simple benchmark (~2-5 minutes)
+# Quick verification (~2-5 minutes)
 cargo bench --bench simple
 
-# Output shows:
-# - Correctness verification
-# - Encoding speed per data type
-# - Decoding speed per data type
-# - Compression ratios
-```
-
-### Comprehensive Analysis
-
-```bash
-# Full multi-algorithm benchmark (~1 hour)
+# Comprehensive suite (~1 hour)
 cargo bench --bench comprehensive
 
-# Results saved to:
-# - target/benchmark_report_<timestamp>.md
-# - target/benchmark_report_<timestamp>.json
-```
-
-### Custom Benchmarks
-
-```bash
-# Test specific formats
+# Custom filters
 BENCH_FORMATS=json,csv cargo bench --bench comprehensive
-
-# Test specific algorithms
-BENCH_ALGOS=gdelta,gdelta_zstd cargo bench --bench comprehensive
-
-# Test specific patterns
+BENCH_ALGOS=gdelta,xpatch cargo bench --bench comprehensive
 BENCH_PATTERNS=minor_edit,append_1024 cargo bench --bench comprehensive
 
-# Combine filters
-BENCH_FORMATS=json BENCH_ALGOS=gdelta BENCH_SIZES=memory \
-  cargo bench --bench comprehensive
-```
-
-### Benchmark Modes
-
-```bash
-# Quick mode (default): 10 samples, 1s measurement
-BENCH_MODE=quick cargo bench --bench comprehensive
-
-# Full mode: 100 samples, 5s measurement
+# Full mode (larger sample size)
 BENCH_MODE=full cargo bench --bench comprehensive
 ```
 
----
+Results saved to `target/benchmark_report_<timestamp>.md`
 
-## Conclusion
+### Git Repository Benchmarks
 
-**gdelta excels at speed while maintaining competitive compression.**
+Using xpatch's git benchmark tool:
 
-### When to Choose gdelta
-
-- [X] You need **high throughput** (hundreds of MB/s)
-- [X] You need **fast decoding** (several GB/s)
-- [X] You're processing **16KB-128KB chunks**
-- [X] You want **predictable performance**
-- [X] You need **production-ready** code (pure Rust, no unsafe)
-
-### When to Choose Alternatives
-
-- **qbsdiff**: Maximum compression is critical, time is not
-- **xpatch**: Want automatic algorithm selection
-- ❌ **xdelta3**: Not recommended (failed verification)
-
-### Recommended Default
-
-**For most use cases: `gdelta + zstd (level 3)`**
-
-This provides:
-
-- 258 MB/s encoding (10x faster than qbsdiff)
-- 2.0 GB/s decoding
-- 70% space saved
-- CLI: `gdelta encode -c zstd`
+_Please see the xpatch repository for more information._
 
 ---
 
-*Benchmarks run on 2025-12-10. Hardware: AMD Ryzen 7 7800X3D, 64GB RAM, Fedora Linux 42.*
+## Conclusions
+
+### Algorithm Characteristics Summary
+
+**gdelta:**
+
+- Fastest encode/decode across all workloads
+- Competitive compression (68% synthetic, 94-97% git)
+- Predictable, stable performance
+- Best for: speed-critical applications, real-time processing
+
+**gdelta_lz4:**
+
+- Fast with improved compression vs raw gdelta
+- 430 MB/s encode, 3.9 GB/s decode
+- 71% saved (synthetic)
+- Best for: balanced speed/compression needs
+
+**gdelta_zstd:**
+
+- Better compression than lz4, slower than raw
+- 305 MB/s encode, 2.2 GB/s decode
+- 75% saved (synthetic)
+- Best for: production systems valuing both metrics
+
+**xpatch:**
+
+- Matches gdelta_zstd in synthetic benchmarks
+- Superior compression in git repositories with tags
+- Automatic algorithm selection
+- Best for: version control, complex file histories
+
+**vcdiff:**
+
+- RFC 3284 standard compliance
+- Moderate speed (94 MB/s encode)
+- Lower compression than alternatives
+- Best for: standards-required environments
+
+**qbsdiff:**
+
+- Best compression across synthetic workloads (84%)
+- Significantly slower than alternatives (22 MB/s)
+- Best for: bandwidth-critical, time-insensitive use cases
+
+**zstd_dict:**
+
+- Lowest compression among tested algorithms
+- Slowest encode/decode
+- Requires training data
+- Limited applicability
+
+### Workload-Specific Insights
+
+**For synthetic/controlled edits:**
+
+- Algorithm choice significantly impacts compression (55-84% range)
+- Speed varies widely (14-496 MB/s)
+- qbsdiff provides best compression
+- gdelta provides best speed
+
+**For git repository workloads:**
+
+- All algorithms compress well (93-98% saved)
+- Differences smaller but still meaningful
+- xpatch tag optimization excels (up to 98% saved)
+- Speed differences measured in microseconds
+
+**Key takeaway:** Test with your actual data patterns. Synthetic benchmarks show capabilities, real-world workloads show
+practical performance.
+
+### Recommended Defaults
+
+**Most users:** gdelta_zstd
+
+- 305 MB/s encode, 2.2 GB/s decode
+- 75% saved in synthetic tests
+- Balanced performance
+
+**Version control:** xpatch
+
+- Excellent compression on real repos (95-98%)
+- Tag mode for complex histories
+- Sequential mode for speed
+
+**Speed-critical:** gdelta
+
+- 496 MB/s encode, 4.4 GB/s decode
+- Competitive compression
+- Simplest implementation
+
+**Space-critical:** qbsdiff
+
+- 84% saved (best compression)
+- Accept 22x slower encoding
+
+**Standards-required:** vcdiff
+
+- RFC 3284 compliance
+- Moderate performance
+
+---
+
+*Synthetic benchmarks: 2025-12-12, AMD Ryzen 7 7800X3D, 64GB RAM, Fedora Linux 42*
+
+*Git benchmarks: 2025-12-11, AMD Ryzen 7 7800X3D, 64GB RAM, Fedora Linux 42, xpatch
+v0.2.0 ([results](https://github.com/ImGajeed76/xpatch/tree/master/test_results))*
