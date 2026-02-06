@@ -321,4 +321,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-Built with ❤️ by [ImGajeed76](https://github.com/ImGajeed76)
+Built with ❤️ by [Oliver Seifert](https://oseifert.ch) | [Blog Post](https://oseifert.ch/blog/devto-i-got-obsessed-with-2-byte-deltas-and-built-a-delta-compressor-that-actually-hits-them-4332)
