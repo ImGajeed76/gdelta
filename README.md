@@ -229,6 +229,8 @@ See [PERFORMANCE.md](PERFORMANCE.md) for detailed analysis.*
 - xpatch with tag optimization: best compression (97.5-97.9%)
 - gdelta: fastest (4-5µs), competitive compression (94.5-97.0%)
 - Differences measured in microseconds, all are fast
+- For versioned text with micro edits (docs, configs, source code), xpatch is generally the better fit — tag optimization finds better base versions across history, yielding up to 97.9% compression with acceptable overhead (~20µs per comparison)
+
 
 **Workload matters:** Performance characteristics vary significantly between synthetic edits and real file evolution
 patterns.
@@ -243,8 +245,8 @@ patterns.
 
 **Version Control Systems:**
 
-- Best compression: xpatch with tags (97.5-97.9% on real repos)
-- Fastest: gdelta (4-5µs per operation)
+- Recommended for versioned text: xpatch with tags (97.5-97.9% on real repos)
+- Speed-critical: gdelta (4-5µs per operation, 94.5-97.0% on real repos)
 - Balanced: xpatch sequential mode or gdelta+lz4
 
 **Backup & Storage:**
